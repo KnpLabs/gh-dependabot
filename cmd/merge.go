@@ -51,11 +51,23 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 			return nil
 		}
 
+		deleteBranch, err := cmd.Flags().GetBool("delete-branch")
+		if err != nil {
+			return err
+		}
+
 		for _, pr := range prs {
 			fmt.Printf("Merging PR #%d...\n", pr.Number)
-			_, _, err := gh.Exec("pr", "merge", strconv.Itoa(pr.Number), methodFlag)
+			args := []string{"pr", "merge", strconv.Itoa(pr.Number), methodFlag}
+			if deleteBranch {
+				args = append(args, "--delete-branch")
+			}
+			_, stderr, err := gh.Exec(args...)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to merge PR #%d: %v\n", pr.Number, err)
+				if stderr.Len() > 0 {
+					fmt.Fprintf(os.Stderr, "%s\n", stderr.String())
+				}
 				continue
 			}
 			fmt.Printf("PR #%d merged.\n", pr.Number)
@@ -80,5 +92,6 @@ func mergeMethodFlag(method string) (string, error) {
 
 func init() {
 	mergeCmd.Flags().String("method", "merge", "Merge method to use: merge, rebase, or squash")
+	mergeCmd.Flags().Bool("delete-branch", true, "Delete the branch after merge")
 	rootCmd.AddCommand(mergeCmd)
 }
