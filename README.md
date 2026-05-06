@@ -27,6 +27,20 @@ Use the `--help` flag to see available commands and options:
 gh dependabot --help
 ```
 
+You can approve Dependabot's PR:
+
+```bash
+gh dependabot approve [PR's number...]
+```
+
+You can merge Dependabot's PR:
+
+```bash
+gh dependabot merge [PR's number...]
+```
+
+Wants more feature? Open an issue, I'll take a look as soon as I can!
+
 ## Building from source
 
 1. Clone the repository:
