@@ -46,11 +46,17 @@ func newListModel() listModel {
 		{Title: "Mergeable", Width: 12},
 	}
 
+	tableWidth := 0
+	for _, col := range columns {
+		tableWidth += col.Width
+	}
+
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithRows([]table.Row{}),
 		table.WithFocused(true),
 		table.WithHeight(15),
+		table.WithWidth(tableWidth),
 	)
 
 	return listModel{
