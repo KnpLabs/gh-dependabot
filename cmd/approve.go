@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -87,6 +88,7 @@ func listDependabotPRs() ([]pullRequest, error) {
 			pullRequests(states: OPEN, first: 100) {
 				nodes {
 					number
+					headRefName
 					author { login }
 					mergeable
 					commits(last: 1) {
@@ -117,8 +119,9 @@ func listDependabotPRs() ([]pullRequest, error) {
 		Repository struct {
 			PullRequests struct {
 				Nodes []struct {
-					Number    int `json:"number"`
-					Author    struct {
+					Number      int `json:"number"`
+					HeadRefName string `json:"headRefName"`
+					Author      struct {
 						Login string `json:"login"`
 					} `json:"author"`
 					Mergeable string `json:"mergeable"`
@@ -147,7 +150,7 @@ func listDependabotPRs() ([]pullRequest, error) {
 
 	var eligible []pullRequest
 	for _, node := range result.Repository.PullRequests.Nodes {
-		if !isDependabotAuthor(node.Author.Login) {
+		if !isDependabotPR(node.Author.Login, node.HeadRefName) {
 			continue
 		}
 
@@ -180,8 +183,12 @@ func listDependabotPRs() ([]pullRequest, error) {
 	return eligible, nil
 }
 
+func isDependabotPR(login string, headRefName string) bool {
+	return isDependabotAuthor(login) || strings.HasPrefix(headRefName, "dependabot/")
+}
+
 func isDependabotAuthor(login string) bool {
-	return login == "app/dependabot" || login == "dependabot[bot]"
+	return login == "app/dependabot" || login == "dependabot[bot]" || login == "dependabot"
 }
 
 func hasPassingChecks(checks []statusCheck) bool {

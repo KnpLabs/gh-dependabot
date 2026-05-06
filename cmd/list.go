@@ -135,6 +135,7 @@ func fetchDependabotPRs() tea.Msg {
 				nodes {
 					number
 					title
+					headRefName
 					author { login }
 					mergeable
 					commits(last: 1) {
@@ -165,9 +166,10 @@ func fetchDependabotPRs() tea.Msg {
 		Repository struct {
 			PullRequests struct {
 				Nodes []struct {
-					Number    int    `json:"number"`
-					Title     string `json:"title"`
-					Author    struct {
+					Number      int    `json:"number"`
+					Title       string `json:"title"`
+					HeadRefName string `json:"headRefName"`
+					Author      struct {
 						Login string `json:"login"`
 					} `json:"author"`
 					Mergeable string `json:"mergeable"`
@@ -196,7 +198,7 @@ func fetchDependabotPRs() tea.Msg {
 
 	var dependabotPRs []listPullRequest
 	for _, node := range result.Repository.PullRequests.Nodes {
-		if !isDependabotAuthor(node.Author.Login) {
+		if !isDependabotPR(node.Author.Login, node.HeadRefName) {
 			continue
 		}
 
