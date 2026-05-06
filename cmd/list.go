@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,7 +8,8 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
-	"github.com/cli/go-gh/v2"
+	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/cli/go-gh/v2/pkg/repository"
 )
 
 type listPullRequest struct {
@@ -119,24 +119,122 @@ func (m listModel) View() tea.View {
 }
 
 func fetchDependabotPRs() tea.Msg {
-	stdout, _, err := gh.Exec("pr", "list", "--json", "number,title,author,statusCheckRollup,mergeable")
+	client, err := api.DefaultGraphQLClient()
 	if err != nil {
-		return prsErrorMsg{err: fmt.Errorf("failed to list pull requests: %w", err)}
+		return prsErrorMsg{err: fmt.Errorf("failed to create GraphQL client: %w", err)}
 	}
 
-	var prs []listPullRequest
-	if err := json.Unmarshal(stdout.Bytes(), &prs); err != nil {
-		return prsErrorMsg{err: fmt.Errorf("failed to parse pull requests: %w", err)}
+	repo, err := repository.Current()
+	if err != nil {
+		return prsErrorMsg{err: fmt.Errorf("failed to determine current repository: %w", err)}
+	}
+
+	query := `query DependabotPRs($owner: String!, $name: String!) {
+		repository(owner: $owner, name: $name) {
+			pullRequests(states: OPEN, first: 100) {
+				nodes {
+					number
+					title
+					author { login }
+					mergeable
+					commits(last: 1) {
+						nodes {
+							commit {
+								statusCheckRollup {
+									contexts(first: 100) {
+										nodes {
+											... on CheckRun { conclusion }
+											... on StatusContext { state }
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}`
+
+	variables := map[string]interface{}{
+		"owner": repo.Owner,
+		"name":  repo.Name,
+	}
+
+	var result struct {
+		Repository struct {
+			PullRequests struct {
+				Nodes []struct {
+					Number    int    `json:"number"`
+					Title     string `json:"title"`
+					Author    struct {
+						Login string `json:"login"`
+					} `json:"author"`
+					Mergeable string `json:"mergeable"`
+					Commits   struct {
+						Nodes []struct {
+							Commit struct {
+								StatusCheckRollup *struct {
+									Contexts struct {
+										Nodes []struct {
+											Conclusion string `json:"conclusion"`
+											State      string `json:"state"`
+										} `json:"nodes"`
+									} `json:"contexts"`
+								} `json:"statusCheckRollup"`
+							} `json:"commit"`
+						} `json:"nodes"`
+					} `json:"commits"`
+				} `json:"nodes"`
+			} `json:"pullRequests"`
+		} `json:"repository"`
+	}
+
+	if err := client.Do(query, variables, &result); err != nil {
+		return prsErrorMsg{err: fmt.Errorf("failed to query pull requests: %w", err)}
 	}
 
 	var dependabotPRs []listPullRequest
-	for _, pr := range prs {
-		if isDependabotAuthor(pr.Author.Login) {
-			dependabotPRs = append(dependabotPRs, pr)
+	for _, node := range result.Repository.PullRequests.Nodes {
+		if !isDependabotAuthor(node.Author.Login) {
+			continue
 		}
+
+		var checks []statusCheck
+		if len(node.Commits.Nodes) > 0 && node.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
+			for _, ctx := range node.Commits.Nodes[0].Commit.StatusCheckRollup.Contexts.Nodes {
+				conclusion := ctx.Conclusion
+				if conclusion == "" {
+					// For StatusContext nodes, map state to conclusion
+					conclusion = mapStateToConclusion(ctx.State)
+				}
+				checks = append(checks, statusCheck{Conclusion: conclusion})
+			}
+		}
+
+		dependabotPRs = append(dependabotPRs, listPullRequest{
+			Number:            node.Number,
+			Title:             node.Title,
+			Author:            author{Login: node.Author.Login},
+			StatusCheckRollup: checks,
+			Mergeable:         node.Mergeable,
+		})
 	}
 
 	return prsLoadedMsg{prs: dependabotPRs}
+}
+
+func mapStateToConclusion(state string) string {
+	switch state {
+	case "SUCCESS":
+		return "SUCCESS"
+	case "PENDING", "EXPECTED":
+		return "PENDING"
+	case "FAILURE", "ERROR":
+		return "FAILURE"
+	default:
+		return state
+	}
 }
 
 func checksStatus(checks []statusCheck) string {
