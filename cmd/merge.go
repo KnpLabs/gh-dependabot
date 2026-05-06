@@ -9,8 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var mergeMethod string
-
 var mergeCmd = &cobra.Command{
 	Use:   "merge [pull request numbers...]",
 	Short: "Merge dependabot's pull requests that have passed or skipped status checks and are mergeable",
@@ -20,7 +18,11 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 
 The merge method can be configured with the --method flag (merge, rebase, squash).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		methodFlag, err := mergeMethodFlag(mergeMethod)
+		method, err := cmd.Flags().GetString("method")
+		if err != nil {
+			return err
+		}
+		methodFlag, err := mergeMethodFlag(method)
 		if err != nil {
 			return err
 		}
@@ -77,6 +79,6 @@ func mergeMethodFlag(method string) (string, error) {
 }
 
 func init() {
-	mergeCmd.Flags().StringVar(&mergeMethod, "method", "merge", "Merge method to use: merge, rebase, or squash")
+	mergeCmd.Flags().String("method", "merge", "Merge method to use: merge, rebase, or squash")
 	rootCmd.AddCommand(mergeCmd)
 }
