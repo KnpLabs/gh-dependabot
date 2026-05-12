@@ -1,4 +1,4 @@
-module github.com/clementvtrd/gh-dependabot
+module github.com/knplabs/gh-dependabot
 
 go 1.26.2
 

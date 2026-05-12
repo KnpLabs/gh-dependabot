@@ -10,7 +10,7 @@ A [GitHub CLI](https://cli.github.com/) extension to interact with pull requests
 ## Installation
 
 ```bash
-gh extension install clementvtrd/gh-dependabot
+gh extension install knplabs/gh-dependabot
 ```
 
 ## Usage
@@ -46,7 +46,7 @@ Wants more feature? Open an issue, I'll take a look as soon as I can!
 1. Clone the repository:
 
    ```bash
-   git clone https://github.com/clementvtrd/gh-dependabot.git
+   git clone https://github.com/knplabs/gh-dependabot.git
    cd gh-dependabot
    ```
 
