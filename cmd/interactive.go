@@ -25,9 +25,44 @@ The default action shown in the footer flips based on CI status:
 
 Skipping has no GitHub side effect: the PR is left untouched and can be
 reviewed again on the next run. A summary lists approved and skipped PR
-numbers when the loop ends or you quit early.`,
+numbers when the loop ends or you quit early.
+
+Pass --merge to also merge each PR after approval, using the method
+specified by --method (merge, rebase, squash).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		mergeAfterApprove, err := cmd.Flags().GetBool("merge")
+		if err != nil {
+			return err
+		}
+		method, err := cmd.Flags().GetString("method")
+		if err != nil {
+			return err
+		}
+		deleteBranch, err := cmd.Flags().GetBool("delete-branch")
+		if err != nil {
+			return err
+		}
+
+		var methodFlag string
+		if mergeAfterApprove {
+			methodFlag, err = mergeMethodFlag(method)
+			if err != nil {
+				return err
+			}
+			allowed, err := fetchAllowedMergeMethods()
+			if err != nil {
+				return err
+			}
+			if err := validateMergeMethod(method, allowed); err != nil {
+				return err
+			}
+		}
+
 		m := newInteractiveModel()
+		m.mergeAfterApprove = mergeAfterApprove
+		m.mergeMethodFlag = methodFlag
+		m.deleteBranch = deleteBranch
+
 		p := tea.NewProgram(m)
 		final, err := p.Run()
 		if err != nil {
@@ -40,21 +75,40 @@ numbers when the loop ends or you quit early.`,
 	},
 }
 
+type actionState int
+
+const (
+	actionIdle actionState = iota
+	actionApproving
+	actionMerging
+)
+
 type interactiveModel struct {
-	prs         []listPullRequest
-	index       int
-	approved    []int
-	skipped     []int
-	diff        string
-	viewport    viewport.Model
-	spinner     spinner.Model
-	loadingList bool
-	loadingDiff bool
-	err         error
-	width       int
-	height      int
-	done        bool
-	quitted     bool
+	prs               []listPullRequest
+	index             int
+	approved          []int
+	merged            []int
+	mergeFailed       []prMergeFailure
+	skipped           []int
+	diff              string
+	viewport          viewport.Model
+	spinner           spinner.Model
+	loadingList       bool
+	loadingDiff       bool
+	action            actionState
+	mergeAfterApprove bool
+	mergeMethodFlag   string
+	deleteBranch      bool
+	err               error
+	width             int
+	height            int
+	done              bool
+	quitted           bool
+}
+
+type prMergeFailure struct {
+	number int
+	err    error
 }
 
 type diffLoadedMsg struct {
@@ -64,6 +118,11 @@ type diffLoadedMsg struct {
 }
 
 type approveDoneMsg struct {
+	number int
+	err    error
+}
+
+type mergeDoneMsg struct {
 	number int
 	err    error
 }
@@ -118,6 +177,24 @@ func approvePRCmd(number int) tea.Cmd {
 	}
 }
 
+func mergePRCmd(number int, methodFlag string, deleteBranch bool) tea.Cmd {
+	return func() tea.Msg {
+		args := []string{"pr", "merge", strconv.Itoa(number), methodFlag}
+		if deleteBranch {
+			args = append(args, "--delete-branch")
+		}
+		_, stderr, err := gh.Exec(args...)
+		if err != nil {
+			msg := err.Error()
+			if stderr.Len() > 0 {
+				msg = strings.TrimSpace(stderr.String())
+			}
+			return mergeDoneMsg{number: number, err: fmt.Errorf("%s", msg)}
+		}
+		return mergeDoneMsg{number: number}
+	}
+}
+
 func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -162,13 +239,27 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.approved = append(m.approved, msg.number)
+		if m.mergeAfterApprove {
+			m.action = actionMerging
+			return m, tea.Batch(m.spinner.Tick, mergePRCmd(msg.number, m.mergeMethodFlag, m.deleteBranch))
+		}
+		m.action = actionIdle
+		return m, m.advance()
+
+	case mergeDoneMsg:
+		if msg.err != nil {
+			m.mergeFailed = append(m.mergeFailed, prMergeFailure{number: msg.number, err: msg.err})
+		} else {
+			m.merged = append(m.merged, msg.number)
+		}
+		m.action = actionIdle
 		return m, m.advance()
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 
-	if m.loadingList || m.loadingDiff {
+	if m.loadingList || m.loadingDiff || m.action != actionIdle {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
@@ -187,19 +278,21 @@ func (m interactiveModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 
-	if m.loadingList || m.loadingDiff || m.index >= len(m.prs) {
+	if m.loadingList || m.loadingDiff || m.action != actionIdle || m.index >= len(m.prs) {
 		return m, nil
 	}
 
 	switch key {
 	case "y", "Y":
-		return m, approvePRCmd(m.prs[m.index].Number)
+		m.action = actionApproving
+		return m, tea.Batch(m.spinner.Tick, approvePRCmd(m.prs[m.index].Number))
 	case "n", "N":
 		m.skipped = append(m.skipped, m.prs[m.index].Number)
 		return m, m.advance()
 	case "enter":
 		if defaultApprove(m.prs[m.index]) {
-			return m, approvePRCmd(m.prs[m.index].Number)
+			m.action = actionApproving
+			return m, tea.Batch(m.spinner.Tick, approvePRCmd(m.prs[m.index].Number))
 		}
 		m.skipped = append(m.skipped, m.prs[m.index].Number)
 		return m, m.advance()
@@ -282,13 +375,27 @@ func (m interactiveModel) bottomBlock() string {
 	status := fmt.Sprintf("Checks: %s   Mergeable: %s",
 		checksStatus(pr.StatusCheckRollup), mergeableStatus(pr.Mergeable))
 
-	var prompt string
-	if defaultApprove(pr) {
-		prompt = "Approve? [Y/n]"
-	} else {
-		prompt = "Approve? [y/N]"
+	var footer string
+	switch m.action {
+	case actionApproving:
+		footer = fmt.Sprintf("%s Approving #%d... (q=quit)", m.spinner.View(), pr.Number)
+	case actionMerging:
+		footer = fmt.Sprintf("%s Merging #%d... (q=quit)", m.spinner.View(), pr.Number)
+	default:
+		actionLabel := "Approve"
+		yLegend := "y=approve"
+		if m.mergeAfterApprove {
+			actionLabel = "Approve & merge"
+			yLegend = "y=approve+merge"
+		}
+		var prompt string
+		if defaultApprove(pr) {
+			prompt = fmt.Sprintf("%s? [Y/n]", actionLabel)
+		} else {
+			prompt = fmt.Sprintf("%s? [y/N]", actionLabel)
+		}
+		footer = fmt.Sprintf("%s   (%s, n=skip, ↑↓=scroll, q=quit)", prompt, yLegend)
 	}
-	footer := fmt.Sprintf("%s   (y=approve, n=skip, ↑↓=scroll, q=quit)", prompt)
 
 	return fmt.Sprintf("%s\n%s\n%s\n%s", separator, titleBlock.String(), status, footer)
 }
@@ -355,6 +462,19 @@ func (m interactiveModel) printSummary() {
 	} else {
 		fmt.Println("Approved (0): —")
 	}
+	if m.mergeAfterApprove {
+		if len(m.merged) > 0 {
+			fmt.Printf("Merged   (%d): %s\n", len(m.merged), joinNumbers(m.merged))
+		} else {
+			fmt.Println("Merged   (0): —")
+		}
+		if len(m.mergeFailed) > 0 {
+			fmt.Printf("Merge failed (%d):\n", len(m.mergeFailed))
+			for _, f := range m.mergeFailed {
+				fmt.Printf("  #%d: %v\n", f.number, f.err)
+			}
+		}
+	}
 	if len(m.skipped) > 0 {
 		fmt.Printf("Skipped  (%d): %s\n", len(m.skipped), joinNumbers(m.skipped))
 	} else {
@@ -389,5 +509,8 @@ func maxInt(a, b int) int {
 }
 
 func init() {
+	interactiveCmd.Flags().Bool("merge", false, "Merge each PR after approving it")
+	interactiveCmd.Flags().String("method", "merge", "Merge method to use when --merge is set: merge, rebase, or squash")
+	interactiveCmd.Flags().Bool("delete-branch", true, "Delete the branch after merge (only with --merge)")
 	rootCmd.AddCommand(interactiveCmd)
 }

@@ -4,10 +4,90 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/cli/go-gh/v2"
+	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
 )
+
+type allowedMergeMethods struct {
+	Merge  bool
+	Squash bool
+	Rebase bool
+}
+
+func fetchAllowedMergeMethods() (allowedMergeMethods, error) {
+	client, err := api.DefaultGraphQLClient()
+	if err != nil {
+		return allowedMergeMethods{}, fmt.Errorf("failed to create GraphQL client: %w", err)
+	}
+	repo, err := repository.Current()
+	if err != nil {
+		return allowedMergeMethods{}, fmt.Errorf("failed to determine current repository: %w", err)
+	}
+
+	query := `query RepoMergeMethods($owner: String!, $name: String!) {
+		repository(owner: $owner, name: $name) {
+			mergeCommitAllowed
+			squashMergeAllowed
+			rebaseMergeAllowed
+		}
+	}`
+	variables := map[string]interface{}{
+		"owner": repo.Owner,
+		"name":  repo.Name,
+	}
+
+	var result struct {
+		Repository struct {
+			MergeCommitAllowed bool `json:"mergeCommitAllowed"`
+			SquashMergeAllowed bool `json:"squashMergeAllowed"`
+			RebaseMergeAllowed bool `json:"rebaseMergeAllowed"`
+		} `json:"repository"`
+	}
+	if err := client.Do(query, variables, &result); err != nil {
+		return allowedMergeMethods{}, fmt.Errorf("failed to query repository merge settings: %w", err)
+	}
+	return allowedMergeMethods{
+		Merge:  result.Repository.MergeCommitAllowed,
+		Squash: result.Repository.SquashMergeAllowed,
+		Rebase: result.Repository.RebaseMergeAllowed,
+	}, nil
+}
+
+func validateMergeMethod(method string, allowed allowedMergeMethods) error {
+	var ok bool
+	switch method {
+	case "merge":
+		ok = allowed.Merge
+	case "squash":
+		ok = allowed.Squash
+	case "rebase":
+		ok = allowed.Rebase
+	default:
+		return fmt.Errorf("invalid merge method %q: must be one of merge, rebase, squash", method)
+	}
+	if ok {
+		return nil
+	}
+
+	var enabled []string
+	if allowed.Merge {
+		enabled = append(enabled, "merge")
+	}
+	if allowed.Squash {
+		enabled = append(enabled, "squash")
+	}
+	if allowed.Rebase {
+		enabled = append(enabled, "rebase")
+	}
+	if len(enabled) == 0 {
+		return fmt.Errorf("merge method %q is not allowed on this repository (no merge methods are enabled)", method)
+	}
+	return fmt.Errorf("merge method %q is not allowed on this repository; allowed: %s", method, strings.Join(enabled, ", "))
+}
 
 var mergeCmd = &cobra.Command{
 	Use:   "merge [pull request numbers...]",
@@ -24,6 +104,14 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 		}
 		methodFlag, err := mergeMethodFlag(method)
 		if err != nil {
+			return err
+		}
+
+		allowed, err := fetchAllowedMergeMethods()
+		if err != nil {
+			return err
+		}
+		if err := validateMergeMethod(method, allowed); err != nil {
 			return err
 		}
 
