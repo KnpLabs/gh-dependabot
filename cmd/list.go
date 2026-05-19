@@ -125,14 +125,22 @@ func (m listModel) View() tea.View {
 }
 
 func fetchDependabotPRs() tea.Msg {
+	prs, err := fetchDependabotPullRequests()
+	if err != nil {
+		return prsErrorMsg{err: err}
+	}
+	return prsLoadedMsg{prs: prs}
+}
+
+func fetchDependabotPullRequests() ([]listPullRequest, error) {
 	client, err := api.DefaultGraphQLClient()
 	if err != nil {
-		return prsErrorMsg{err: fmt.Errorf("failed to create GraphQL client: %w", err)}
+		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
 	}
 
 	repo, err := repository.Current()
 	if err != nil {
-		return prsErrorMsg{err: fmt.Errorf("failed to determine current repository: %w", err)}
+		return nil, fmt.Errorf("failed to determine current repository: %w", err)
 	}
 
 	query := `query DependabotPRs($owner: String!, $name: String!) {
@@ -199,7 +207,7 @@ func fetchDependabotPRs() tea.Msg {
 	}
 
 	if err := client.Do(query, variables, &result); err != nil {
-		return prsErrorMsg{err: fmt.Errorf("failed to query pull requests: %w", err)}
+		return nil, fmt.Errorf("failed to query pull requests: %w", err)
 	}
 
 	var dependabotPRs []listPullRequest
@@ -213,7 +221,6 @@ func fetchDependabotPRs() tea.Msg {
 			for _, ctx := range node.Commits.Nodes[0].Commit.StatusCheckRollup.Contexts.Nodes {
 				conclusion := ctx.Conclusion
 				if conclusion == "" {
-					// For StatusContext nodes, map state to conclusion
 					conclusion = mapStateToConclusion(ctx.State)
 				}
 				checks = append(checks, statusCheck{Conclusion: conclusion})
@@ -229,7 +236,7 @@ func fetchDependabotPRs() tea.Msg {
 		})
 	}
 
-	return prsLoadedMsg{prs: dependabotPRs}
+	return dependabotPRs, nil
 }
 
 func mapStateToConclusion(state string) string {
