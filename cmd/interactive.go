@@ -75,18 +75,11 @@ specified by --method (merge, rebase, squash).`,
 	},
 }
 
-type actionState int
-
-const (
-	actionIdle actionState = iota
-	actionApproving
-	actionMerging
-)
-
 type interactiveModel struct {
 	prs               []listPullRequest
 	index             int
 	approved          []int
+	approveFailed     []prMergeFailure
 	merged            []int
 	mergeFailed       []prMergeFailure
 	skipped           []int
@@ -95,7 +88,7 @@ type interactiveModel struct {
 	spinner           spinner.Model
 	loadingList       bool
 	loadingDiff       bool
-	action            actionState
+	pending           int
 	mergeAfterApprove bool
 	mergeMethodFlag   string
 	deleteBranch      bool
@@ -234,32 +227,38 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case approveDoneMsg:
+		m.pending--
 		if msg.err != nil {
-			m.err = fmt.Errorf("failed to approve PR #%d: %w", msg.number, msg.err)
+			m.approveFailed = append(m.approveFailed, prMergeFailure{number: msg.number, err: msg.err})
+		} else {
+			m.approved = append(m.approved, msg.number)
+			if m.mergeAfterApprove {
+				m.pending++
+				return m, tea.Batch(m.spinner.Tick, mergePRCmd(msg.number, m.mergeMethodFlag, m.deleteBranch))
+			}
+		}
+		if m.done && m.pending == 0 {
 			return m, tea.Quit
 		}
-		m.approved = append(m.approved, msg.number)
-		if m.mergeAfterApprove {
-			m.action = actionMerging
-			return m, tea.Batch(m.spinner.Tick, mergePRCmd(msg.number, m.mergeMethodFlag, m.deleteBranch))
-		}
-		m.action = actionIdle
-		return m, m.advance()
+		return m, nil
 
 	case mergeDoneMsg:
+		m.pending--
 		if msg.err != nil {
 			m.mergeFailed = append(m.mergeFailed, prMergeFailure{number: msg.number, err: msg.err})
 		} else {
 			m.merged = append(m.merged, msg.number)
 		}
-		m.action = actionIdle
-		return m, m.advance()
+		if m.done && m.pending == 0 {
+			return m, tea.Quit
+		}
+		return m, nil
 
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
 
-	if m.loadingList || m.loadingDiff || m.action != actionIdle {
+	if m.loadingList || m.loadingDiff || m.pending > 0 {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
@@ -275,24 +274,30 @@ func (m interactiveModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "ctrl+c", "q":
 		m.quitted = true
-		return m, tea.Quit
+		m.done = true
+		if m.pending == 0 {
+			return m, tea.Quit
+		}
+		return m, m.spinner.Tick
 	}
 
-	if m.loadingList || m.loadingDiff || m.action != actionIdle || m.index >= len(m.prs) {
+	if m.loadingList || m.loadingDiff || m.index >= len(m.prs) {
 		return m, nil
 	}
 
 	switch key {
 	case "y", "Y":
-		m.action = actionApproving
-		return m, tea.Batch(m.spinner.Tick, approvePRCmd(m.prs[m.index].Number))
+		number := m.prs[m.index].Number
+		m.pending++
+		return m, tea.Batch(m.spinner.Tick, approvePRCmd(number), m.advance())
 	case "n", "N":
 		m.skipped = append(m.skipped, m.prs[m.index].Number)
 		return m, m.advance()
 	case "enter":
 		if defaultApprove(m.prs[m.index]) {
-			m.action = actionApproving
-			return m, tea.Batch(m.spinner.Tick, approvePRCmd(m.prs[m.index].Number))
+			number := m.prs[m.index].Number
+			m.pending++
+			return m, tea.Batch(m.spinner.Tick, approvePRCmd(number), m.advance())
 		}
 		m.skipped = append(m.skipped, m.prs[m.index].Number)
 		return m, m.advance()
@@ -307,7 +312,10 @@ func (m *interactiveModel) advance() tea.Cmd {
 	m.index++
 	if m.index >= len(m.prs) {
 		m.done = true
-		return tea.Quit
+		if m.pending == 0 {
+			return tea.Quit
+		}
+		return m.spinner.Tick
 	}
 	m.diff = ""
 	m.viewport.SetContent("")
@@ -326,7 +334,10 @@ func (m interactiveModel) View() tea.View {
 	if len(m.prs) == 0 {
 		return tea.NewView("No open dependabot pull requests found.\n")
 	}
-	if m.index >= len(m.prs) {
+	if m.done || m.index >= len(m.prs) {
+		if m.pending > 0 {
+			return tea.NewView(fmt.Sprintf("%s Waiting for %d in-flight request(s) to complete...\n", m.spinner.View(), m.pending))
+		}
 		return tea.NewView("Done.\n")
 	}
 
@@ -375,26 +386,21 @@ func (m interactiveModel) bottomBlock() string {
 	status := fmt.Sprintf("Checks: %s   Mergeable: %s",
 		checksStatus(pr.StatusCheckRollup), mergeableStatus(pr.Mergeable))
 
-	var footer string
-	switch m.action {
-	case actionApproving:
-		footer = fmt.Sprintf("%s Approving #%d... (q=quit)", m.spinner.View(), pr.Number)
-	case actionMerging:
-		footer = fmt.Sprintf("%s Merging #%d... (q=quit)", m.spinner.View(), pr.Number)
-	default:
-		actionLabel := "Approve"
-		yLegend := "y=approve"
-		if m.mergeAfterApprove {
-			actionLabel = "Approve & merge"
-			yLegend = "y=approve+merge"
-		}
-		var prompt string
-		if defaultApprove(pr) {
-			prompt = fmt.Sprintf("%s? [Y/n]", actionLabel)
-		} else {
-			prompt = fmt.Sprintf("%s? [y/N]", actionLabel)
-		}
-		footer = fmt.Sprintf("%s   (%s, n=skip, ↑↓=scroll, q=quit)", prompt, yLegend)
+	actionLabel := "Approve"
+	yLegend := "y=approve"
+	if m.mergeAfterApprove {
+		actionLabel = "Approve & merge"
+		yLegend = "y=approve+merge"
+	}
+	var prompt string
+	if defaultApprove(pr) {
+		prompt = fmt.Sprintf("%s? [Y/n]", actionLabel)
+	} else {
+		prompt = fmt.Sprintf("%s? [y/N]", actionLabel)
+	}
+	footer := fmt.Sprintf("%s   (%s, n=skip, ↑↓=scroll, q=quit)", prompt, yLegend)
+	if m.pending > 0 {
+		footer = fmt.Sprintf("%s %s [%d in-flight]", m.spinner.View(), footer, m.pending)
 	}
 
 	return fmt.Sprintf("%s\n%s\n%s\n%s", separator, titleBlock.String(), status, footer)
@@ -461,6 +467,12 @@ func (m interactiveModel) printSummary() {
 		fmt.Printf("Approved (%d): %s\n", len(m.approved), joinNumbers(m.approved))
 	} else {
 		fmt.Println("Approved (0): —")
+	}
+	if len(m.approveFailed) > 0 {
+		fmt.Printf("Approve failed (%d):\n", len(m.approveFailed))
+		for _, f := range m.approveFailed {
+			fmt.Printf("  #%d: %v\n", f.number, f.err)
+		}
 	}
 	if m.mergeAfterApprove {
 		if len(m.merged) > 0 {
