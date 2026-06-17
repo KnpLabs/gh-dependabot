@@ -23,6 +23,10 @@ The default action shown in the footer flips based on CI status:
   - checks passing/pending: [Y/n] — enter approves
   - any check failing:      [y/N] — enter skips
 
+Press r to post a "@dependabot rebase" comment on the current PR and move
+on; this is independent of approve/merge and is available whatever the CI
+status.
+
 Skipping has no GitHub side effect: the PR is left untouched and can be
 reviewed again on the next run. A summary lists approved and skipped PR
 numbers when the loop ends or you quit early.
@@ -82,6 +86,8 @@ type interactiveModel struct {
 	approveFailed     []prMergeFailure
 	merged            []int
 	mergeFailed       []prMergeFailure
+	rebased           []int
+	rebaseFailed      []prMergeFailure
 	skipped           []int
 	diff              string
 	viewport          viewport.Model
@@ -116,6 +122,11 @@ type approveDoneMsg struct {
 }
 
 type mergeDoneMsg struct {
+	number int
+	err    error
+}
+
+type rebaseDoneMsg struct {
 	number int
 	err    error
 }
@@ -188,6 +199,20 @@ func mergePRCmd(number int, methodFlag string, deleteBranch bool) tea.Cmd {
 	}
 }
 
+func rebasePRCmd(number int) tea.Cmd {
+	return func() tea.Msg {
+		_, stderr, err := gh.Exec("pr", "comment", strconv.Itoa(number), "--body", "@dependabot rebase")
+		if err != nil {
+			msg := err.Error()
+			if stderr.Len() > 0 {
+				msg = strings.TrimSpace(stderr.String())
+			}
+			return rebaseDoneMsg{number: number, err: fmt.Errorf("%s", msg)}
+		}
+		return rebaseDoneMsg{number: number}
+	}
+}
+
 func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -254,6 +279,18 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case rebaseDoneMsg:
+		m.pending--
+		if msg.err != nil {
+			m.rebaseFailed = append(m.rebaseFailed, prMergeFailure{number: msg.number, err: msg.err})
+		} else {
+			m.rebased = append(m.rebased, msg.number)
+		}
+		if m.done && m.pending == 0 {
+			return m, tea.Quit
+		}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		return m.handleKey(msg)
 	}
@@ -293,6 +330,10 @@ func (m interactiveModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "n", "N":
 		m.skipped = append(m.skipped, m.prs[m.index].Number)
 		return m, m.advance()
+	case "r", "R":
+		number := m.prs[m.index].Number
+		m.pending++
+		return m, tea.Batch(m.spinner.Tick, rebasePRCmd(number), m.advance())
 	case "enter":
 		if defaultApprove(m.prs[m.index]) {
 			number := m.prs[m.index].Number
@@ -398,7 +439,7 @@ func (m interactiveModel) bottomBlock() string {
 	} else {
 		prompt = fmt.Sprintf("%s? [y/N]", actionLabel)
 	}
-	footer := fmt.Sprintf("%s   (%s, n=skip, ↑↓=scroll, q=quit)", prompt, yLegend)
+	footer := fmt.Sprintf("%s   (%s, r=rebase, n=skip, ↑↓=scroll, q=quit)", prompt, yLegend)
 	if m.pending > 0 {
 		footer = fmt.Sprintf("%s %s [%d in-flight]", m.spinner.View(), footer, m.pending)
 	}
@@ -485,6 +526,15 @@ func (m interactiveModel) printSummary() {
 			for _, f := range m.mergeFailed {
 				fmt.Printf("  #%d: %v\n", f.number, f.err)
 			}
+		}
+	}
+	if len(m.rebased) > 0 {
+		fmt.Printf("Rebased  (%d): %s\n", len(m.rebased), joinNumbers(m.rebased))
+	}
+	if len(m.rebaseFailed) > 0 {
+		fmt.Printf("Rebase failed (%d):\n", len(m.rebaseFailed))
+		for _, f := range m.rebaseFailed {
+			fmt.Printf("  #%d: %v\n", f.number, f.err)
 		}
 	}
 	if len(m.skipped) > 0 {
