@@ -21,10 +21,10 @@ type author struct {
 }
 
 type pullRequest struct {
-	Number             int           `json:"number"`
-	Author             author        `json:"author"`
-	StatusCheckRollup  []statusCheck `json:"statusCheckRollup"`
-	Mergeable          string        `json:"mergeable"`
+	Number            int           `json:"number"`
+	Author            author        `json:"author"`
+	StatusCheckRollup []statusCheck `json:"statusCheckRollup"`
+	Mergeable         string        `json:"mergeable"`
 }
 
 var approveCmd = &cobra.Command{
@@ -119,7 +119,7 @@ func listDependabotPRs() ([]pullRequest, error) {
 		Repository struct {
 			PullRequests struct {
 				Nodes []struct {
-					Number      int `json:"number"`
+					Number      int    `json:"number"`
 					HeadRefName string `json:"headRefName"`
 					Author      struct {
 						Login string `json:"login"`
