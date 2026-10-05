@@ -1,0 +1,21 @@
+name: ci
+on:
+  pull_request:
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: runs-on=${{ github.run_id }}/runner=small
+    steps:
+      - uses: runs-on/action@v2
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Lint
+        run: make lint
+      - name: Test
+        run: make test
+      - name: Build
+        run: make build
