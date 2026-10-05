@@ -10,9 +10,10 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/runner=small
     steps:
-      - uses: actions/checkout@v6
+      - uses: runs-on/action@v2
+      - uses: actions/checkout@v7
       - uses: cli/gh-extension-precompile@v2
         with:
           generate_attestations: true
