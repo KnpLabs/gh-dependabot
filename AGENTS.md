@@ -8,15 +8,21 @@ A GitHub CLI extension (`gh dependabot`) written in Go to list, approve, merge a
 
 ## Commands
 
+Prefer the `Makefile` targets over calling `go` directly (run `make` to list them):
+
 ```bash
-go build -o gh-dependabot .   # build
-go vet ./...                  # static checks (no linter config in the repo)
-gofmt -l .                    # formatting check
+make build   # build the gh-dependabot binary
+make fmt     # format the code (gofmt -w)
+make lint    # gofmt check + go vet (no linter config in the repo)
+make test    # go test ./...
+make check   # lint + test + build, run before committing
+make tidy    # go mod tidy
+make clean   # remove the built binary
 ```
 
-There is no test suite yet (`go test ./...` compiles but finds no tests).
+There is no test suite yet (`make test` compiles but finds no tests).
 
-To try a change, build then run the binary from inside a repo that has open Dependabot PRs: `/path/to/gh-dependabot/gh-dependabot [interactive|approve|merge]`. It relies on an authenticated `gh` and infers the repo from the cwd, so there is no need to `gh extension install .` between rebuilds.
+To try a change, `make build` then run the binary from inside a repo that has open Dependabot PRs: `/path/to/gh-dependabot/gh-dependabot [interactive|approve|merge]`. It relies on an authenticated `gh` and infers the repo from the cwd, so there is no need to `gh extension install .` between rebuilds.
 
 Releases are cut by pushing a `v*` tag; `.github/workflows/release.yml` uses `cli/gh-extension-precompile` to build binaries with the Go version from `go.mod`.
 
