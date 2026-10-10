@@ -156,6 +156,13 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 				if stderr.Len() > 0 {
 					fmt.Fprintf(os.Stderr, "%s\n", stderr.String())
 				}
+				if isMergeConflict(pr.Number, stderr.String()) {
+					if err := requestRebase(pr.Number); err != nil {
+						fmt.Fprintf(os.Stderr, "Failed to request a rebase of PR #%d: %v\n", pr.Number, err)
+					} else {
+						fmt.Printf("PR #%d has conflicts, asked Dependabot to rebase it.\n", pr.Number)
+					}
+				}
 				continue
 			}
 			fmt.Printf("PR #%d merged.\n", pr.Number)
@@ -163,6 +170,28 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 
 		return nil
 	},
+}
+
+// isMergeConflict reports whether a failed merge was caused by conflicts, which
+// typically happens once a sibling Dependabot PR touching the same files is merged.
+func isMergeConflict(number int, stderr string) bool {
+	if strings.Contains(stderr, "cannot be cleanly created") {
+		return true
+	}
+	stdout, _, err := gh.Exec("pr", "view", strconv.Itoa(number), "--json", "mergeable", "--jq", ".mergeable")
+	return err == nil && strings.TrimSpace(stdout.String()) == "CONFLICTING"
+}
+
+// requestRebase asks Dependabot to rebase the PR by commenting on it.
+func requestRebase(number int) error {
+	_, stderr, err := gh.Exec("pr", "comment", strconv.Itoa(number), "--body", "@dependabot rebase")
+	if err != nil {
+		if stderr.Len() > 0 {
+			return fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
+		}
+		return err
+	}
+	return nil
 }
 
 func mergeMethodFlag(method string) (string, error) {
