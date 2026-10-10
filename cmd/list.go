@@ -8,7 +8,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
-	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/cli/go-gh/v2/pkg/repository"
 )
 
@@ -133,7 +132,7 @@ func fetchDependabotPRs() tea.Msg {
 }
 
 func fetchDependabotPullRequests() ([]listPullRequest, error) {
-	client, err := api.DefaultGraphQLClient()
+	client, err := newGraphQLClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
 	}
@@ -261,7 +260,6 @@ func checksStatus(checks []statusCheck) string {
 	for _, c := range checks {
 		switch c.Conclusion {
 		case "SUCCESS", "SKIPPED":
-			// ok
 		case "FAILURE", "ERROR":
 			hasFail = true
 			allPass = false
@@ -290,8 +288,9 @@ func mergeableStatus(m string) string {
 }
 
 func truncateTitle(title string, max int) string {
-	if len(title) <= max {
+	runes := []rune(title)
+	if len(runes) <= max {
 		return title
 	}
-	return strings.TrimSpace(title[:max-1]) + "…"
+	return strings.TrimSpace(string(runes[:max-1])) + "…"
 }
