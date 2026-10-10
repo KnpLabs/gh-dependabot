@@ -3,10 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
-	"strconv"
 
-	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
 	"github.com/spf13/cobra"
 )
@@ -20,11 +17,16 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 
 The merge method can be configured with the --method flag (merge, rebase, squash).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		method, err := cmd.Flags().GetString("method")
+		methodFlag, err := cmd.Flags().GetString("method")
 		if err != nil {
 			return err
 		}
-		mergeMethod, err := dependabot.ParseMergeMethod(method)
+		deleteBranch, err := cmd.Flags().GetBool("delete-branch")
+		if err != nil {
+			return err
+		}
+
+		numbers, err := parsePRNumbers(args)
 		if err != nil {
 			return err
 		}
@@ -34,59 +36,29 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 			return err
 		}
 
-		allowed, err := client.AllowedMergeMethods()
-		if err != nil {
-			return err
-		}
-		if err := allowed.Validate(mergeMethod); err != nil {
-			return err
-		}
-
-		var targetPRs []int
-		for _, arg := range args {
-			num, err := strconv.Atoi(arg)
-			if err != nil {
-				return fmt.Errorf("invalid pull request number: %s", arg)
-			}
-			targetPRs = append(targetPRs, num)
-		}
-
-		prs, err := fetchEligiblePullRequests(client)
+		method, err := resolveMergeMethod(client, methodFlag)
 		if err != nil {
 			return err
 		}
 
-		if len(targetPRs) > 0 {
-			prs = dependabot.FilterByNumbers(prs, targetPRs)
-		}
-
-		if len(prs) == 0 {
-			fmt.Println("No eligible dependabot pull requests found.")
-			return nil
-		}
-
-		deleteBranch, err := cmd.Flags().GetBool("delete-branch")
-		if err != nil {
-			return err
-		}
-
-		for _, pr := range prs {
-			fmt.Printf("Merging PR #%d...\n", pr.Number)
-			if err := client.Merge(pr.Number, mergeMethod, deleteBranch); err != nil {
-				fmt.Fprintf(os.Stderr, "Failed to merge PR #%d: %v\n", pr.Number, err)
-				if errors.Is(err, github.ErrConflict) {
-					if err := client.RequestRebase(pr.Number); err != nil {
-						fmt.Fprintf(os.Stderr, "Failed to request a rebase of PR #%d: %v\n", pr.Number, err)
-					} else {
-						fmt.Printf("PR #%d has conflicts, asked Dependabot to rebase it.\n", pr.Number)
-					}
+		return runOnEligiblePRs(cmd, client, numbers, bulkAction{
+			verb:     "merge",
+			progress: "Merging",
+			done:     "merged",
+			apply: func(number int) error {
+				return client.Merge(number, method, deleteBranch)
+			},
+			onFailure: func(cmd *cobra.Command, number int, err error) {
+				if !errors.Is(err, github.ErrConflict) {
+					return
 				}
-				continue
-			}
-			fmt.Printf("PR #%d merged.\n", pr.Number)
-		}
-
-		return nil
+				if err := client.RequestRebase(number); err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Failed to request a rebase of PR #%d: %v\n", number, err)
+					return
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "PR #%d has conflicts, asked Dependabot to rebase it.\n", number)
+			},
+		})
 	},
 }
 

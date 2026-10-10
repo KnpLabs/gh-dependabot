@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"bytes"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -68,6 +70,61 @@ func TestDefaultApprove(t *testing.T) {
 		t.Run(checksStatus(tt.checks), func(t *testing.T) {
 			if got := defaultApprove(dependabot.PullRequest{Checks: tt.checks}); got != tt.want {
 				t.Errorf("defaultApprove(%v) = %v, want %v", tt.checks, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPrintSummary(t *testing.T) {
+	prs := []dependabot.PullRequest{{Number: 1}, {Number: 4}, {Number: 5}, {Number: 7}}
+
+	tests := []struct {
+		name  string
+		model interactiveModel
+		want  string
+	}{
+		{
+			name:  "no pull requests",
+			model: interactiveModel{},
+			want:  "No open dependabot pull requests found.\n",
+		},
+		{
+			name:  "error prints nothing",
+			model: interactiveModel{prs: prs, err: errors.New("boom")},
+		},
+		{
+			name: "approve only",
+			model: interactiveModel{
+				prs:           prs,
+				index:         len(prs),
+				approved:      []int{1, 4},
+				approveFailed: []prMergeFailure{{number: 5, err: errors.New("not allowed")}},
+				skipped:       []int{7},
+			},
+			want: "\nApproved (2): #1, #4\nApprove failed (1):\n  #5: not allowed\nSkipped  (1): #7\n",
+		},
+		{
+			name: "merge with rebases and early quit",
+			model: interactiveModel{
+				prs:               prs,
+				index:             2,
+				quitted:           true,
+				mergeAfterApprove: true,
+				approved:          []int{1, 4},
+				merged:            []int{1},
+				mergeFailed:       []prMergeFailure{{number: 4, err: errors.New("merge conflict: base branch was modified")}},
+				rebased:           []int{4},
+			},
+			want: "\nApproved (2): #1, #4\nMerged   (1): #1\nMerge failed (1):\n  #4: merge conflict: base branch was modified\n" +
+				"Rebased  (1): #4\nSkipped  (0): —\nUnreviewed (2): #5, #7\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var out bytes.Buffer
+			tt.model.printSummary(&out)
+			if got := out.String(); got != tt.want {
+				t.Errorf("printSummary() mismatch\n got: %q\nwant: %q", got, tt.want)
 			}
 		})
 	}

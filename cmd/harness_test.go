@@ -2,158 +2,135 @@ package cmd
 
 import (
 	"bytes"
-	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
 	"reflect"
-	"regexp"
-	"strings"
 	"testing"
 
-	"github.com/cli/go-gh/v2/pkg/api"
-	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-var update = flag.Bool("update", false, "rewrite golden files in testdata/")
-
-var operationName = regexp.MustCompile(`^\s*(?:query|mutation)\s+(\w+)`)
-
-type graphQLRequest struct {
-	Query     string         `json:"query"`
-	Variables map[string]any `json:"variables"`
+var openPullRequests = []dependabot.PullRequest{
+	{Number: 1, Title: "Bump bubbles", Checks: dependabot.CheckPassing, Mergeable: dependabot.Mergeable},
+	{Number: 3, Title: "Bump checkout", Checks: dependabot.CheckPending, Mergeable: dependabot.Conflicting},
+	{Number: 4, Title: "Bump cobra", Checks: dependabot.CheckNone, Mergeable: dependabot.Mergeable},
+	{Number: 5, Title: "Bump x/sys", Checks: dependabot.CheckFailing, Mergeable: dependabot.Mergeable},
 }
 
-type fakeGitHub struct {
-	t         *testing.T
-	responses map[string]string
-	requests  []graphQLRequest
-	execs     [][]string
-	exec      func(args []string) (stdout, stderr string, err error)
+type fakeClient struct {
+	prs        []dependabot.PullRequest
+	listErr    error
+	allowed    dependabot.AllowedMergeMethods
+	approveErr map[int]error
+	mergeErr   map[int]error
+	rebaseErr  map[int]error
+	calls      []string
 }
 
-func newFakeGitHub(t *testing.T, responses map[string]string) *fakeGitHub {
+func newFakeClient(t *testing.T) *fakeClient {
 	t.Helper()
-	f := &fakeGitHub{t: t, responses: responses}
+	f := &fakeClient{
+		prs:     openPullRequests,
+		allowed: dependabot.AllowedMergeMethods{Merge: true, Squash: true, Rebase: true},
+	}
 
 	origClient := newClient
 	t.Cleanup(func() { newClient = origClient })
-
-	newClient = func() (github.Client, error) {
-		graphql, err := api.NewGraphQLClient(api.ClientOptions{
-			Host:      "github.com",
-			AuthToken: "fake-token",
-			Transport: f,
-		})
-		if err != nil {
-			return nil, err
-		}
-		repo := repository.Repository{Host: "github.com", Owner: "knplabs", Name: "fake-repo"}
-		return github.New(f.ghExec, graphql, repo), nil
-	}
+	newClient = func() (github.Client, error) { return f, nil }
 
 	return f
 }
 
-func (f *fakeGitHub) ghExec(args ...string) (stdout, stderr bytes.Buffer, err error) {
-	f.execs = append(f.execs, args)
-	if f.exec == nil {
-		return stdout, stderr, nil
-	}
-	out, errOut, err := f.exec(args)
-	stdout.WriteString(out)
-	stderr.WriteString(errOut)
-	return stdout, stderr, err
+func (f *fakeClient) ListOpenDependabotPRs() ([]dependabot.PullRequest, error) {
+	f.calls = append(f.calls, "ListOpenDependabotPRs")
+	return f.prs, f.listErr
 }
 
-func (f *fakeGitHub) RoundTrip(req *http.Request) (*http.Response, error) {
-	var body graphQLRequest
-	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decoding GraphQL request: %w", err)
-	}
-	f.requests = append(f.requests, body)
-
-	match := operationName.FindStringSubmatch(body.Query)
-	if match == nil {
-		return nil, errors.New("GraphQL request has no operation name")
-	}
-	fixture, ok := f.responses[match[1]]
-	if !ok {
-		return nil, fmt.Errorf("no fixture registered for operation %s", match[1])
-	}
-	data, err := os.ReadFile(filepath.Join("testdata", "graphql", fixture))
-	if err != nil {
-		return nil, err
-	}
-
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": {"application/json"}},
-		Body:       io.NopCloser(bytes.NewReader(data)),
-		Request:    req,
-	}, nil
+func (f *fakeClient) AllowedMergeMethods() (dependabot.AllowedMergeMethods, error) {
+	f.calls = append(f.calls, "AllowedMergeMethods")
+	return f.allowed, nil
 }
 
-func (f *fakeGitHub) assertRequestsMatchGolden(name string) {
-	f.t.Helper()
-
-	var b strings.Builder
-	for i, r := range f.requests {
-		if i > 0 {
-			b.WriteString("\n---\n\n")
-		}
-		variables, err := json.Marshal(r.Variables)
-		if err != nil {
-			f.t.Fatalf("encoding variables: %v", err)
-		}
-		fmt.Fprintf(&b, "%s\n\nvariables: %s\n", r.Query, variables)
-	}
-	got := b.String()
-
-	path := filepath.Join("testdata", "golden", name+".graphql")
-	if *update {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			f.t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
-			f.t.Fatal(err)
-		}
-		return
-	}
-
-	want, err := os.ReadFile(path)
-	if err != nil {
-		f.t.Fatalf("reading golden file (run `go test ./cmd -update` to create it): %v", err)
-	}
-	if got != string(want) {
-		f.t.Errorf("GraphQL requests differ from %s (run `go test ./cmd -update` if the change is intended)\n--- got ---\n%s\n--- want ---\n%s", path, got, want)
-	}
+func (f *fakeClient) Approve(number int) error {
+	f.calls = append(f.calls, fmt.Sprintf("Approve %d", number))
+	return f.approveErr[number]
 }
 
-func (f *fakeGitHub) assertExecs(want [][]string) {
-	f.t.Helper()
-	if len(want) == 0 && len(f.execs) == 0 {
-		return
-	}
-	if !reflect.DeepEqual(f.execs, want) {
-		f.t.Errorf("gh calls mismatch\n got: %q\nwant: %q", f.execs, want)
-	}
+func (f *fakeClient) Merge(number int, method dependabot.MergeMethod, deleteBranch bool) error {
+	f.calls = append(f.calls, fmt.Sprintf("Merge %d %s deleteBranch=%t", number, method, deleteBranch))
+	return f.mergeErr[number]
 }
 
-func runCommand(t *testing.T, args ...string) error {
+func (f *fakeClient) RequestRebase(number int) error {
+	f.calls = append(f.calls, fmt.Sprintf("RequestRebase %d", number))
+	return f.rebaseErr[number]
+}
+
+func (f *fakeClient) Diff(number int) (string, error) {
+	f.calls = append(f.calls, fmt.Sprintf("Diff %d", number))
+	return "", nil
+}
+
+func (f *fakeClient) assertCalls(t *testing.T, want []string) {
 	t.Helper()
+	if len(want) == 0 && len(f.calls) == 0 {
+		return
+	}
+	if !reflect.DeepEqual(f.calls, want) {
+		t.Errorf("client calls mismatch\n got: %q\nwant: %q", f.calls, want)
+	}
+}
+
+type commandResult struct {
+	stdout string
+	stderr string
+	err    error
+}
+
+func runCommand(t *testing.T, args ...string) commandResult {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
 	rootCmd.SetArgs(args)
-	rootCmd.SetOut(io.Discard)
-	rootCmd.SetErr(io.Discard)
+	rootCmd.SetOut(&stdout)
+	rootCmd.SetErr(&stderr)
 	t.Cleanup(func() {
 		rootCmd.SetArgs(nil)
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
+		resetFlags(rootCmd)
 	})
-	return rootCmd.Execute()
+	err := rootCmd.Execute()
+	return commandResult{stdout: stdout.String(), stderr: stderr.String(), err: err}
+}
+
+func resetFlags(cmd *cobra.Command) {
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		_ = f.Value.Set(f.DefValue)
+		f.Changed = false
+	})
+	for _, sub := range cmd.Commands() {
+		resetFlags(sub)
+	}
+}
+
+func assertOutput(t *testing.T, got commandResult, wantStdout, wantStderr string) {
+	t.Helper()
+	if got.err != nil {
+		t.Fatalf("unexpected error: %v", got.err)
+	}
+	if got.stdout != wantStdout {
+		t.Errorf("stdout mismatch\n got: %q\nwant: %q", got.stdout, wantStdout)
+	}
+	if got.stderr != wantStderr {
+		t.Errorf("stderr mismatch\n got: %q\nwant: %q", got.stderr, wantStderr)
+	}
+}
+
+func assertCommandError(t *testing.T, got commandResult, want string) {
+	t.Helper()
+	if got.err == nil || got.err.Error() != want {
+		t.Fatalf("error = %v, want %q", got.err, want)
+	}
 }

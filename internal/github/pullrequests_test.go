@@ -137,7 +137,7 @@ func TestListOpenDependabotPRs(t *testing.T) {
 				t.Fatalf("ListOpenDependabotPRs() error: %v", err)
 			}
 
-			assertRepoVariables(t, transport)
+			assertRequestsMatchGolden(t, transport, "dependabot_prs")
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("ListOpenDependabotPRs() =\n%+v\nwant\n%+v", got, tt.want)
 			}
