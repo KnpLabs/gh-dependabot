@@ -16,6 +16,8 @@ import (
 	"testing"
 
 	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/knplabs/gh-dependabot/internal/github"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files in testdata/")
@@ -39,30 +41,34 @@ func newFakeGitHub(t *testing.T, responses map[string]string) *fakeGitHub {
 	t.Helper()
 	f := &fakeGitHub{t: t, responses: responses}
 
-	t.Setenv("GH_REPO", "knplabs/fake-repo")
+	origClient := newClient
+	t.Cleanup(func() { newClient = origClient })
 
-	origClient, origExec := newGraphQLClient, ghExec
-	t.Cleanup(func() { newGraphQLClient, ghExec = origClient, origExec })
-
-	newGraphQLClient = func() (*api.GraphQLClient, error) {
-		return api.NewGraphQLClient(api.ClientOptions{
+	newClient = func() (github.Client, error) {
+		graphql, err := api.NewGraphQLClient(api.ClientOptions{
 			Host:      "github.com",
 			AuthToken: "fake-token",
 			Transport: f,
 		})
-	}
-	ghExec = func(args ...string) (stdout, stderr bytes.Buffer, err error) {
-		f.execs = append(f.execs, args)
-		if f.exec == nil {
-			return stdout, stderr, nil
+		if err != nil {
+			return nil, err
 		}
-		out, errOut, err := f.exec(args)
-		stdout.WriteString(out)
-		stderr.WriteString(errOut)
-		return stdout, stderr, err
+		repo := repository.Repository{Host: "github.com", Owner: "knplabs", Name: "fake-repo"}
+		return github.New(f.ghExec, graphql, repo), nil
 	}
 
 	return f
+}
+
+func (f *fakeGitHub) ghExec(args ...string) (stdout, stderr bytes.Buffer, err error) {
+	f.execs = append(f.execs, args)
+	if f.exec == nil {
+		return stdout, stderr, nil
+	}
+	out, errOut, err := f.exec(args)
+	stdout.WriteString(out)
+	stderr.WriteString(errOut)
+	return stdout, stderr, err
 }
 
 func (f *fakeGitHub) RoundTrip(req *http.Request) (*http.Response, error) {

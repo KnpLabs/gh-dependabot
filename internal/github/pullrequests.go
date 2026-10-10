@@ -1,9 +1,8 @@
-package cmd
+package github
 
 import (
 	"fmt"
 
-	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
 
@@ -59,22 +58,7 @@ type pullRequestNode struct {
 	} `json:"commits"`
 }
 
-func fetchDependabotPullRequests() ([]dependabot.PullRequest, error) {
-	client, err := newGraphQLClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
-	}
-
-	repo, err := repository.Current()
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine current repository: %w", err)
-	}
-
-	variables := map[string]interface{}{
-		"owner": repo.Owner,
-		"name":  repo.Name,
-	}
-
+func (c *client) ListOpenDependabotPRs() ([]dependabot.PullRequest, error) {
 	var result struct {
 		Repository struct {
 			PullRequests struct {
@@ -83,7 +67,7 @@ func fetchDependabotPullRequests() ([]dependabot.PullRequest, error) {
 		} `json:"repository"`
 	}
 
-	if err := client.Do(dependabotPRsQuery, variables, &result); err != nil {
+	if err := c.graphql.Do(dependabotPRsQuery, c.repoVariables(), &result); err != nil {
 		return nil, fmt.Errorf("failed to query pull requests: %w", err)
 	}
 
@@ -95,20 +79,6 @@ func fetchDependabotPullRequests() ([]dependabot.PullRequest, error) {
 		}
 	}
 	return prs, nil
-}
-
-func fetchEligiblePullRequests() ([]dependabot.PullRequest, error) {
-	prs, err := fetchDependabotPullRequests()
-	if err != nil {
-		return nil, err
-	}
-	var eligible []dependabot.PullRequest
-	for _, pr := range prs {
-		if pr.Eligible() {
-			eligible = append(eligible, pr)
-		}
-	}
-	return eligible, nil
 }
 
 func (node pullRequestNode) toPullRequest() dependabot.PullRequest {

@@ -1,4 +1,4 @@
-package cmd
+package github
 
 import (
 	"reflect"
@@ -29,7 +29,7 @@ func TestMapStateToConclusion(t *testing.T) {
 	}
 }
 
-func TestFetchDependabotPullRequests(t *testing.T) {
+func TestListOpenDependabotPRs(t *testing.T) {
 	tests := []struct {
 		name    string
 		fixture string
@@ -130,16 +130,16 @@ func TestFetchDependabotPullRequests(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake := newFakeGitHub(t, map[string]string{"DependabotPRs": tt.fixture})
+			transport := &fakeTransport{fixture: tt.fixture}
 
-			got, err := fetchDependabotPullRequests()
+			got, err := newTestClient(t, nil, transport).ListOpenDependabotPRs()
 			if err != nil {
-				t.Fatalf("fetchDependabotPullRequests() error: %v", err)
+				t.Fatalf("ListOpenDependabotPRs() error: %v", err)
 			}
 
-			fake.assertRequestsMatchGolden("list")
+			assertRepoVariables(t, transport)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("fetchDependabotPullRequests() =\n%+v\nwant\n%+v", got, tt.want)
+				t.Errorf("ListOpenDependabotPRs() =\n%+v\nwant\n%+v", got, tt.want)
 			}
 		})
 	}
