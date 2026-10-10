@@ -2,123 +2,145 @@ package cmd
 
 import (
 	"errors"
-	"strings"
+	"fmt"
 	"testing"
+
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
+	"github.com/knplabs/gh-dependabot/internal/github"
 )
 
 func TestMergeCommand(t *testing.T) {
-	errMergeFailed := errors.New("exit status 1")
+	errConflict := fmt.Errorf("%w: Pull request is not mergeable: the merge commit cannot be cleanly created.", github.ErrConflict)
 
 	tests := []struct {
-		name         string
-		args         []string
-		mergeMethods string
-		exec         func(args []string) (stdout, stderr string, err error)
-		golden       string
-		wantErr      string
-		want         [][]string
+		name       string
+		args       []string
+		mergeErr   map[int]error
+		rebaseErr  map[int]error
+		wantStdout string
+		wantStderr string
+		wantCalls  []string
 	}{
 		{
-			name:         "merges every eligible pull request",
-			args:         []string{"merge", "--method", "squash", "--delete-branch=true"},
-			mergeMethods: "merge_methods_all.json",
-			golden:       "merge",
-			want: [][]string{
-				{"pr", "merge", "1", "--squash", "--delete-branch"},
-				{"pr", "merge", "4", "--squash", "--delete-branch"},
+			name:       "merges every eligible pull request",
+			args:       []string{"merge", "--method", "squash"},
+			wantStdout: "Merging PR #1...\nPR #1 merged.\nMerging PR #4...\nPR #4 merged.\n",
+			wantCalls: []string{
+				"AllowedMergeMethods",
+				"ListOpenDependabotPRs",
+				"Merge 1 squash deleteBranch=true",
+				"Merge 4 squash deleteBranch=true",
 			},
 		},
 		{
-			name:         "keeps the branch when asked to",
-			args:         []string{"merge", "1", "--method", "merge", "--delete-branch=false"},
-			mergeMethods: "merge_methods_all.json",
-			golden:       "merge",
-			want: [][]string{
-				{"pr", "merge", "1", "--merge"},
+			name:       "uses the merge method and keeps the branch when asked to",
+			args:       []string{"merge", "1", "--delete-branch=false"},
+			wantStdout: "Merging PR #1...\nPR #1 merged.\n",
+			wantCalls: []string{
+				"AllowedMergeMethods",
+				"ListOpenDependabotPRs",
+				"Merge 1 merge deleteBranch=false",
 			},
 		},
 		{
-			name:         "asks dependabot to rebase when the merge commit cannot be created",
-			args:         []string{"merge", "1", "--method", "rebase", "--delete-branch=true"},
-			mergeMethods: "merge_methods_all.json",
-			exec: func(args []string) (string, string, error) {
-				if args[1] == "merge" {
-					return "", "Pull request is not mergeable: the merge commit cannot be cleanly created.", errMergeFailed
-				}
-				return "", "", nil
-			},
-			golden: "merge",
-			want: [][]string{
-				{"pr", "merge", "1", "--rebase", "--delete-branch"},
-				{"pr", "comment", "1", "--body", "@dependabot rebase"},
+			name:       "skips pull requests that are not eligible",
+			args:       []string{"merge", "3"},
+			wantStdout: "No eligible dependabot pull requests found.\n",
+			wantCalls:  []string{"AllowedMergeMethods", "ListOpenDependabotPRs"},
+		},
+		{
+			name:       "asks dependabot to rebase on conflict",
+			args:       []string{"merge", "--method", "rebase"},
+			mergeErr:   map[int]error{1: errConflict},
+			wantStdout: "Merging PR #1...\nPR #1 has conflicts, asked Dependabot to rebase it.\nMerging PR #4...\nPR #4 merged.\n",
+			wantStderr: "Failed to merge PR #1: merge conflict: Pull request is not mergeable: the merge commit cannot be cleanly created.\n",
+			wantCalls: []string{
+				"AllowedMergeMethods",
+				"ListOpenDependabotPRs",
+				"Merge 1 rebase deleteBranch=true",
+				"RequestRebase 1",
+				"Merge 4 rebase deleteBranch=true",
 			},
 		},
 		{
-			name:         "asks dependabot to rebase when the pull request became conflicting",
-			args:         []string{"merge", "4", "--method", "squash", "--delete-branch=true"},
-			mergeMethods: "merge_methods_all.json",
-			exec: func(args []string) (string, string, error) {
-				switch args[1] {
-				case "merge":
-					return "", "GraphQL: Base branch was modified.", errMergeFailed
-				case "view":
-					return "CONFLICTING\n", "", nil
-				}
-				return "", "", nil
-			},
-			golden: "merge",
-			want: [][]string{
-				{"pr", "merge", "4", "--squash", "--delete-branch"},
-				{"pr", "view", "4", "--json", "mergeable", "--jq", ".mergeable"},
-				{"pr", "comment", "4", "--body", "@dependabot rebase"},
+			name:       "reports a failed rebase request",
+			args:       []string{"merge", "1"},
+			mergeErr:   map[int]error{1: errConflict},
+			rebaseErr:  map[int]error{1: errors.New("GraphQL: Resource not accessible by integration")},
+			wantStdout: "Merging PR #1...\n",
+			wantStderr: "Failed to merge PR #1: merge conflict: Pull request is not mergeable: the merge commit cannot be cleanly created.\n" +
+				"Failed to request a rebase of PR #1: GraphQL: Resource not accessible by integration\n",
+			wantCalls: []string{
+				"AllowedMergeMethods",
+				"ListOpenDependabotPRs",
+				"Merge 1 merge deleteBranch=true",
+				"RequestRebase 1",
 			},
 		},
 		{
-			name:         "does not ask for a rebase on unrelated failures",
-			args:         []string{"merge", "4", "--method", "squash", "--delete-branch=true"},
-			mergeMethods: "merge_methods_all.json",
-			exec: func(args []string) (string, string, error) {
-				switch args[1] {
-				case "merge":
-					return "", "GraphQL: Required status check is expected.", errMergeFailed
-				case "view":
-					return "MERGEABLE\n", "", nil
-				}
-				return "", "", nil
+			name:       "does not ask for a rebase on unrelated failures",
+			args:       []string{"merge", "4", "--method", "squash"},
+			mergeErr:   map[int]error{4: errors.New("GraphQL: Required status check is expected.")},
+			wantStdout: "Merging PR #4...\n",
+			wantStderr: "Failed to merge PR #4: GraphQL: Required status check is expected.\n",
+			wantCalls: []string{
+				"AllowedMergeMethods",
+				"ListOpenDependabotPRs",
+				"Merge 4 squash deleteBranch=true",
 			},
-			golden: "merge",
-			want: [][]string{
-				{"pr", "merge", "4", "--squash", "--delete-branch"},
-				{"pr", "view", "4", "--json", "mergeable", "--jq", ".mergeable"},
-			},
-		},
-		{
-			name:         "refuses a merge method disabled on the repository",
-			args:         []string{"merge", "--method", "merge", "--delete-branch=true"},
-			mergeMethods: "merge_methods_squash_only.json",
-			golden:       "merge_method_refused",
-			wantErr:      `merge method "merge" is not allowed on this repository; allowed: squash`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake := newFakeGitHub(t, map[string]string{
-				"RepoMergeMethods": tt.mergeMethods,
-				"DependabotPRs":    "pull_requests.json",
-			})
-			fake.exec = tt.exec
+			client := newFakeClient(t)
+			client.mergeErr = tt.mergeErr
+			client.rebaseErr = tt.rebaseErr
 
-			err := runCommand(t, tt.args...)
-			if tt.wantErr != "" {
-				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("merge error = %v, want %q", err, tt.wantErr)
-				}
-			} else if err != nil {
-				t.Fatalf("merge error: %v", err)
-			}
+			got := runCommand(t, tt.args...)
 
-			fake.assertRequestsMatchGolden(tt.golden)
-			fake.assertExecs(tt.want)
+			assertOutput(t, got, tt.wantStdout, tt.wantStderr)
+			client.assertCalls(t, tt.wantCalls)
+		})
+	}
+}
+
+func TestMergeCommandErrors(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		allowed   dependabot.AllowedMergeMethods
+		wantErr   string
+		wantCalls []string
+	}{
+		{
+			name:    "rejects an unknown merge method before any call",
+			args:    []string{"merge", "--method", "octopus"},
+			allowed: dependabot.AllowedMergeMethods{Merge: true},
+			wantErr: `invalid merge method "octopus": must be one of merge, rebase, squash`,
+		},
+		{
+			name:      "refuses a merge method disabled on the repository before touching pull requests",
+			args:      []string{"merge", "--method", "merge"},
+			allowed:   dependabot.AllowedMergeMethods{Squash: true},
+			wantErr:   `merge method "merge" is not allowed on this repository; allowed: squash`,
+			wantCalls: []string{"AllowedMergeMethods"},
+		},
+		{
+			name:    "rejects an invalid pull request number before any call",
+			args:    []string{"merge", "0"},
+			allowed: dependabot.AllowedMergeMethods{Merge: true},
+			wantErr: "invalid pull request number: 0",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newFakeClient(t)
+			client.allowed = tt.allowed
+
+			got := runCommand(t, tt.args...)
+
+			assertCommandError(t, got, tt.wantErr)
+			client.assertCalls(t, tt.wantCalls)
 		})
 	}
 }

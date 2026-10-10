@@ -5,7 +5,6 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
 	"github.com/spf13/cobra"
 )
@@ -37,20 +36,6 @@ Use the arrow keys to navigate and q to quit.`,
 		}
 		return nil
 	},
-}
-
-func fetchEligiblePullRequests(client github.Client) ([]dependabot.PullRequest, error) {
-	prs, err := client.ListOpenDependabotPRs()
-	if err != nil {
-		return nil, err
-	}
-	var eligible []dependabot.PullRequest
-	for _, pr := range prs {
-		if pr.Eligible() {
-			eligible = append(eligible, pr)
-		}
-	}
-	return eligible, nil
 }
 
 func Execute() {

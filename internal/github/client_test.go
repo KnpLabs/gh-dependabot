@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -37,21 +39,26 @@ func (f *fakeExec) exec(args ...string) (stdout, stderr bytes.Buffer, err error)
 	return stdout, stderr, r.err
 }
 
+var update = flag.Bool("update", false, "rewrite golden files in testdata/golden")
+
+type graphQLRequest struct {
+	Query     string         `json:"query"`
+	Variables map[string]any `json:"variables"`
+}
+
 type fakeTransport struct {
-	t         *testing.T
-	fixture   string
-	status    int
-	variables []map[string]any
+	t        *testing.T
+	fixture  string
+	status   int
+	requests []graphQLRequest
 }
 
 func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	var body struct {
-		Variables map[string]any `json:"variables"`
-	}
+	var body graphQLRequest
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		f.t.Fatalf("decoding GraphQL request: %v", err)
 	}
-	f.variables = append(f.variables, body.Variables)
+	f.requests = append(f.requests, body)
 
 	data, err := os.ReadFile(filepath.Join("testdata", f.fixture))
 	if err != nil {
@@ -302,7 +309,7 @@ func TestAllowedMergeMethods(t *testing.T) {
 	if got != want {
 		t.Errorf("AllowedMergeMethods() = %+v, want %+v", got, want)
 	}
-	assertRepoVariables(t, transport)
+	assertRequestsMatchGolden(t, transport, "repo_merge_methods")
 }
 
 func TestGraphQLErrors(t *testing.T) {
@@ -340,10 +347,38 @@ func TestGraphQLErrors(t *testing.T) {
 	}
 }
 
-func assertRepoVariables(t *testing.T, transport *fakeTransport) {
+func assertRequestsMatchGolden(t *testing.T, transport *fakeTransport, name string) {
 	t.Helper()
-	want := []map[string]any{{"owner": "knplabs", "name": "fake-repo"}}
-	if !reflect.DeepEqual(transport.variables, want) {
-		t.Errorf("GraphQL variables = %v, want %v", transport.variables, want)
+
+	var b strings.Builder
+	for i, r := range transport.requests {
+		if i > 0 {
+			b.WriteString("\n---\n\n")
+		}
+		variables, err := json.Marshal(r.Variables)
+		if err != nil {
+			t.Fatalf("encoding variables: %v", err)
+		}
+		fmt.Fprintf(&b, "%s\n\nvariables: %s\n", r.Query, variables)
+	}
+	got := b.String()
+
+	path := filepath.Join("testdata", "golden", name+".graphql")
+	if *update {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading golden file (run `go test ./internal/github -update` to create it): %v", err)
+	}
+	if got != string(want) {
+		t.Errorf("GraphQL requests differ from %s (run `go test ./internal/github -update` if the change is intended)\n--- got ---\n%s\n--- want ---\n%s", path, got, want)
 	}
 }
