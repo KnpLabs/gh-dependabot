@@ -1,0 +1,40 @@
+query RepoMergeMethods($owner: String!, $name: String!) {
+		repository(owner: $owner, name: $name) {
+			mergeCommitAllowed
+			squashMergeAllowed
+			rebaseMergeAllowed
+		}
+	}
+
+variables: {"name":"fake-repo","owner":"knplabs"}
+
+---
+
+query DependabotPRsForApproval($owner: String!, $name: String!) {
+		repository(owner: $owner, name: $name) {
+			pullRequests(states: OPEN, first: 100) {
+				nodes {
+					number
+					headRefName
+					author { login }
+					mergeable
+					commits(last: 1) {
+						nodes {
+							commit {
+								statusCheckRollup {
+									contexts(first: 100) {
+										nodes {
+											... on CheckRun { conclusion }
+											... on StatusContext { state }
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+variables: {"name":"fake-repo","owner":"knplabs"}

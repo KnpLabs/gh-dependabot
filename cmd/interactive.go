@@ -9,7 +9,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
-	"github.com/cli/go-gh/v2"
 	"github.com/spf13/cobra"
 )
 
@@ -124,7 +123,6 @@ type approveDoneMsg struct {
 type mergeDoneMsg struct {
 	number int
 	err    error
-	// rebase is set when the merge failed on conflicts and a rebase was requested.
 	rebase *rebaseDoneMsg
 }
 
@@ -157,7 +155,7 @@ func fetchPRsForInteractive() tea.Msg {
 
 func fetchDiffCmd(number int) tea.Cmd {
 	return func() tea.Msg {
-		stdout, stderr, err := gh.Exec("pr", "diff", strconv.Itoa(number))
+		stdout, stderr, err := ghExec("pr", "diff", strconv.Itoa(number))
 		if err != nil {
 			msg := err.Error()
 			if stderr.Len() > 0 {
@@ -171,7 +169,7 @@ func fetchDiffCmd(number int) tea.Cmd {
 
 func approvePRCmd(number int) tea.Cmd {
 	return func() tea.Msg {
-		_, stderr, err := gh.Exec("pr", "review", strconv.Itoa(number), "--approve")
+		_, stderr, err := ghExec("pr", "review", strconv.Itoa(number), "--approve")
 		if err != nil {
 			msg := err.Error()
 			if stderr.Len() > 0 {
@@ -189,7 +187,7 @@ func mergePRCmd(number int, methodFlag string, deleteBranch bool) tea.Cmd {
 		if deleteBranch {
 			args = append(args, "--delete-branch")
 		}
-		_, stderr, err := gh.Exec(args...)
+		_, stderr, err := ghExec(args...)
 		if err != nil {
 			msg := err.Error()
 			if stderr.Len() > 0 {

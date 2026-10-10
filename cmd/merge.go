@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cli/go-gh/v2"
-	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
 )
@@ -19,7 +17,7 @@ type allowedMergeMethods struct {
 }
 
 func fetchAllowedMergeMethods() (allowedMergeMethods, error) {
-	client, err := api.DefaultGraphQLClient()
+	client, err := newGraphQLClient()
 	if err != nil {
 		return allowedMergeMethods{}, fmt.Errorf("failed to create GraphQL client: %w", err)
 	}
@@ -129,7 +127,6 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 			return err
 		}
 
-		// Filter to target PRs if specified
 		if len(targetPRs) > 0 {
 			prs = filterByNumbers(prs, targetPRs)
 		}
@@ -150,7 +147,7 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 			if deleteBranch {
 				args = append(args, "--delete-branch")
 			}
-			_, stderr, err := gh.Exec(args...)
+			_, stderr, err := ghExec(args...)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to merge PR #%d: %v\n", pr.Number, err)
 				if stderr.Len() > 0 {
@@ -172,19 +169,16 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 	},
 }
 
-// isMergeConflict reports whether a failed merge was caused by conflicts, which
-// typically happens once a sibling Dependabot PR touching the same files is merged.
 func isMergeConflict(number int, stderr string) bool {
 	if strings.Contains(stderr, "cannot be cleanly created") {
 		return true
 	}
-	stdout, _, err := gh.Exec("pr", "view", strconv.Itoa(number), "--json", "mergeable", "--jq", ".mergeable")
+	stdout, _, err := ghExec("pr", "view", strconv.Itoa(number), "--json", "mergeable", "--jq", ".mergeable")
 	return err == nil && strings.TrimSpace(stdout.String()) == "CONFLICTING"
 }
 
-// requestRebase asks Dependabot to rebase the PR by commenting on it.
 func requestRebase(number int) error {
-	_, stderr, err := gh.Exec("pr", "comment", strconv.Itoa(number), "--body", "@dependabot rebase")
+	_, stderr, err := ghExec("pr", "comment", strconv.Itoa(number), "--body", "@dependabot rebase")
 	if err != nil {
 		if stderr.Len() > 0 {
 			return fmt.Errorf("%s", strings.TrimSpace(stderr.String()))

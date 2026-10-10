@@ -5,10 +5,16 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/cli/go-gh/v2"
+	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/spf13/cobra"
 )
 
-// rootCmd represents the base command when called without any subcommands
+var (
+	newGraphQLClient = api.DefaultGraphQLClient
+	ghExec           = gh.Exec
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "gh-dependabot",
 	Short: "A GitHub CLI extension to manage Dependabot pull requests",
@@ -32,7 +38,6 @@ Use the arrow keys to navigate and q to quit.`,
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
