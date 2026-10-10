@@ -1,0 +1,11 @@
+{
+  "none": [],
+  "all_passing": ["SUCCESS", "SUCCESS"],
+  "passing_with_skipped": ["SUCCESS", "SKIPPED"],
+  "skipped_only": ["SKIPPED"],
+  "failing_among_pending": ["PENDING", "FAILURE", "PENDING"],
+  "error_among_passing": ["SUCCESS", "ERROR"],
+  "pending_only": ["PENDING", "PENDING"],
+  "pending_among_passing": ["SUCCESS", "PENDING"],
+  "unknown_conclusion": ["NEUTRAL"]
+}

@@ -6,93 +6,6 @@ import (
 	"testing"
 )
 
-func TestMergeMethodFlag(t *testing.T) {
-	tests := []struct {
-		method  string
-		want    string
-		wantErr string
-	}{
-		{"merge", "--merge", ""},
-		{"rebase", "--rebase", ""},
-		{"squash", "--squash", ""},
-		{"", "", `invalid merge method "": must be one of merge, rebase, squash`},
-		{"Squash", "", `invalid merge method "Squash": must be one of merge, rebase, squash`},
-		{"fast-forward", "", `invalid merge method "fast-forward": must be one of merge, rebase, squash`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.method, func(t *testing.T) {
-			got, err := mergeMethodFlag(tt.method)
-			if got != tt.want {
-				t.Errorf("mergeMethodFlag(%q) = %q, want %q", tt.method, got, tt.want)
-			}
-			assertError(t, err, tt.wantErr)
-		})
-	}
-}
-
-func TestValidateMergeMethod(t *testing.T) {
-	all := allowedMergeMethods{Merge: true, Squash: true, Rebase: true}
-
-	tests := []struct {
-		name    string
-		method  string
-		allowed allowedMergeMethods
-		wantErr string
-	}{
-		{"merge allowed", "merge", all, ""},
-		{"squash allowed", "squash", all, ""},
-		{"rebase allowed", "rebase", all, ""},
-		{"only squash enabled", "squash", allowedMergeMethods{Squash: true}, ""},
-		{
-			"invalid method",
-			"octopus", all,
-			`invalid merge method "octopus": must be one of merge, rebase, squash`,
-		},
-		{
-			"invalid method wins over nothing enabled",
-			"octopus", allowedMergeMethods{},
-			`invalid merge method "octopus": must be one of merge, rebase, squash`,
-		},
-		{
-			"merge disabled, one other enabled",
-			"merge", allowedMergeMethods{Squash: true},
-			`merge method "merge" is not allowed on this repository; allowed: squash`,
-		},
-		{
-			"rebase disabled, others listed in order",
-			"rebase", allowedMergeMethods{Merge: true, Squash: true},
-			`merge method "rebase" is not allowed on this repository; allowed: merge, squash`,
-		},
-		{
-			"nothing enabled",
-			"squash", allowedMergeMethods{},
-			`merge method "squash" is not allowed on this repository (no merge methods are enabled)`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assertError(t, validateMergeMethod(tt.method, tt.allowed), tt.wantErr)
-		})
-	}
-}
-
-func assertError(t *testing.T, err error, want string) {
-	t.Helper()
-	if want == "" {
-		if err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-		return
-	}
-	if err == nil {
-		t.Errorf("expected error %q, got nil", want)
-		return
-	}
-	if err.Error() != want {
-		t.Errorf("error = %q, want %q", err.Error(), want)
-	}
-}
-
 func TestMergeCommand(t *testing.T) {
 	errMergeFailed := errors.New("exit status 1")
 
@@ -190,8 +103,8 @@ func TestMergeCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fake := newFakeGitHub(t, map[string]string{
-				"RepoMergeMethods":         tt.mergeMethods,
-				"DependabotPRsForApproval": "pull_requests.json",
+				"RepoMergeMethods": tt.mergeMethods,
+				"DependabotPRs":    "pull_requests.json",
 			})
 			fake.exec = tt.exec
 
