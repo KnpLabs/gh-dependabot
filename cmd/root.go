@@ -5,15 +5,12 @@ import (
 	"os"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/cli/go-gh/v2"
-	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
+	"github.com/knplabs/gh-dependabot/internal/github"
 	"github.com/spf13/cobra"
 )
 
-var (
-	newGraphQLClient = api.DefaultGraphQLClient
-	ghExec           = gh.Exec
-)
+var newClient = github.Default
 
 var rootCmd = &cobra.Command{
 	Use:   "gh-dependabot",
@@ -29,13 +26,31 @@ open pull requests authored by Dependabot, showing:
 
 Use the arrow keys to navigate and q to quit.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		m := newListModel()
+		client, err := newClient()
+		if err != nil {
+			return err
+		}
+		m := newListModel(client)
 		p := tea.NewProgram(m)
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("failed to run TUI: %w", err)
 		}
 		return nil
 	},
+}
+
+func fetchEligiblePullRequests(client github.Client) ([]dependabot.PullRequest, error) {
+	prs, err := client.ListOpenDependabotPRs()
+	if err != nil {
+		return nil, err
+	}
+	var eligible []dependabot.PullRequest
+	for _, pr := range prs {
+		if pr.Eligible() {
+			eligible = append(eligible, pr)
+		}
+	}
+	return eligible, nil
 }
 
 func Execute() {

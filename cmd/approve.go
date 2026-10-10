@@ -25,7 +25,12 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 			targetPRs = append(targetPRs, num)
 		}
 
-		prs, err := fetchEligiblePullRequests()
+		client, err := newClient()
+		if err != nil {
+			return err
+		}
+
+		prs, err := fetchEligiblePullRequests(client)
 		if err != nil {
 			return err
 		}
@@ -41,8 +46,7 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 
 		for _, pr := range prs {
 			fmt.Printf("Approving PR #%d...\n", pr.Number)
-			_, _, err := ghExec("pr", "review", strconv.Itoa(pr.Number), "--approve")
-			if err != nil {
+			if err := client.Approve(pr.Number); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to approve PR #%d: %v\n", pr.Number, err)
 				continue
 			}
