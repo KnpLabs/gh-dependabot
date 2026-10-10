@@ -1,80 +1,47 @@
 package cmd
 
 import (
-	"encoding/json"
-	"os"
-	"path/filepath"
-	"reflect"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
-
-func loadChecks(t *testing.T, name string) []statusCheck {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join("testdata", "checks.json"))
-	if err != nil {
-		t.Fatalf("reading fixture: %v", err)
-	}
-	var sets map[string][]statusCheck
-	if err := json.Unmarshal(data, &sets); err != nil {
-		t.Fatalf("decoding fixture: %v", err)
-	}
-	checks, ok := sets[name]
-	if !ok {
-		t.Fatalf("no check set %q in fixture", name)
-	}
-	return checks
-}
-
-func TestMapStateToConclusion(t *testing.T) {
-	tests := []struct {
-		state string
-		want  string
-	}{
-		{"SUCCESS", "SUCCESS"},
-		{"PENDING", "PENDING"},
-		{"EXPECTED", "PENDING"},
-		{"FAILURE", "FAILURE"},
-		{"ERROR", "FAILURE"},
-		{"", ""},
-		{"SOMETHING_NEW", "SOMETHING_NEW"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.state, func(t *testing.T) {
-			if got := mapStateToConclusion(tt.state); got != tt.want {
-				t.Errorf("mapStateToConclusion(%q) = %q, want %q", tt.state, got, tt.want)
-			}
-		})
-	}
-}
 
 func TestChecksStatus(t *testing.T) {
 	tests := []struct {
-		fixture string
-		want    string
+		state dependabot.CheckState
+		want  string
 	}{
-		{"none", "none"},
-		{"all_passing", "✓ passing"},
-		{"passing_with_skipped", "✓ passing"},
-		{"skipped_only", "✓ passing"},
-		{"failing_among_pending", "✗ failing"},
-		{"error_among_passing", "✗ failing"},
-		{"pending_only", "● pending"},
-		{"pending_among_passing", "● pending"},
-		{"unknown_conclusion", "● pending"},
+		{dependabot.CheckNone, "none"},
+		{dependabot.CheckPassing, "✓ passing"},
+		{dependabot.CheckFailing, "✗ failing"},
+		{dependabot.CheckPending, "● pending"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.fixture, func(t *testing.T) {
-			if got := checksStatus(loadChecks(t, tt.fixture)); got != tt.want {
-				t.Errorf("checksStatus(%s) = %q, want %q", tt.fixture, got, tt.want)
+		t.Run(tt.want, func(t *testing.T) {
+			if got := checksStatus(tt.state); got != tt.want {
+				t.Errorf("checksStatus(%v) = %q, want %q", tt.state, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestChecksStatusNil(t *testing.T) {
-	if got := checksStatus(nil); got != "none" {
-		t.Errorf("checksStatus(nil) = %q, want %q", got, "none")
+func TestMergeableStatus(t *testing.T) {
+	tests := []struct {
+		mergeable dependabot.Mergeability
+		want      string
+	}{
+		{dependabot.Mergeable, "✓ yes"},
+		{dependabot.Conflicting, "✗ conflict"},
+		{dependabot.Unknown, "● unknown"},
+		{"", "● unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.mergeable), func(t *testing.T) {
+			if got := mergeableStatus(tt.mergeable); got != tt.want {
+				t.Errorf("mergeableStatus(%q) = %q, want %q", tt.mergeable, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -107,49 +74,5 @@ func TestTruncateTitle(t *testing.T) {
 				t.Errorf("truncateTitle(%q, %d) is %d runes long, want at most %d", tt.title, tt.max, n, tt.max)
 			}
 		})
-	}
-}
-
-func TestFetchDependabotPullRequests(t *testing.T) {
-	fake := newFakeGitHub(t, map[string]string{"DependabotPRs": "pull_requests.json"})
-
-	got, err := fetchDependabotPullRequests()
-	if err != nil {
-		t.Fatalf("fetchDependabotPullRequests() error: %v", err)
-	}
-
-	fake.assertRequestsMatchGolden("list")
-
-	want := []listPullRequest{
-		{
-			Number:            1,
-			Title:             "Bump charm.land/bubbles/v2 from 2.2.0 to 2.2.1",
-			Author:            author{Login: "dependabot"},
-			StatusCheckRollup: []statusCheck{{Conclusion: "SUCCESS"}, {Conclusion: "SKIPPED"}},
-			Mergeable:         "MERGEABLE",
-		},
-		{
-			Number:            3,
-			Title:             "Bump actions/checkout from 4 to 5",
-			Author:            author{Login: "octocat"},
-			StatusCheckRollup: []statusCheck{{Conclusion: "PENDING"}},
-			Mergeable:         "CONFLICTING",
-		},
-		{
-			Number:    4,
-			Title:     "Bump github.com/spf13/cobra from 1.10.1 to 1.10.2",
-			Author:    author{Login: "dependabot"},
-			Mergeable: "MERGEABLE",
-		},
-		{
-			Number:            5,
-			Title:             "Bump golang.org/x/sys from 0.45.0 to 0.46.0",
-			Author:            author{Login: "dependabot"},
-			StatusCheckRollup: []statusCheck{{Conclusion: "SUCCESS"}, {Conclusion: "FAILURE"}},
-			Mergeable:         "MERGEABLE",
-		},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("fetchDependabotPullRequests() =\n%+v\nwant\n%+v", got, want)
 	}
 }
