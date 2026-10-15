@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.1.0
-	github.com/cli/go-gh/v2 v2.16.1
+	github.com/cli/go-gh/v2 v2.16.2
 	github.com/spf13/cobra v1.10.2
 )
 
