@@ -1,0 +1,26 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 20,
+            "title": "feat: something done by a human",
+            "headRefName": "feat/something",
+            "author": {"login": "octocat"},
+            "mergeable": "MERGEABLE",
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}
+          },
+          {
+            "number": 21,
+            "title": "chore: bump deps by hand",
+            "headRefName": "chore/dependabot-like",
+            "author": {"login": "dependabot-preview"},
+            "mergeable": "MERGEABLE",
+            "commits": {"nodes": []}
+          }
+        ]
+      }
+    }
+  }
+}

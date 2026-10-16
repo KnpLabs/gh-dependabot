@@ -3,6 +3,8 @@ package cmd
 import (
 	"reflect"
 	"testing"
+
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
 
 func TestWrapWords(t *testing.T) {
@@ -47,6 +49,25 @@ func TestJoinNumbers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := joinNumbers(tt.nums); got != tt.want {
 				t.Errorf("joinNumbers(%v) = %q, want %q", tt.nums, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultApprove(t *testing.T) {
+	tests := []struct {
+		checks dependabot.CheckState
+		want   bool
+	}{
+		{dependabot.CheckNone, true},
+		{dependabot.CheckPassing, true},
+		{dependabot.CheckPending, true},
+		{dependabot.CheckFailing, false},
+	}
+	for _, tt := range tests {
+		t.Run(checksStatus(tt.checks), func(t *testing.T) {
+			if got := defaultApprove(dependabot.PullRequest{Checks: tt.checks}); got != tt.want {
+				t.Errorf("defaultApprove(%v) = %v, want %v", tt.checks, got, tt.want)
 			}
 		})
 	}

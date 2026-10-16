@@ -1,8 +1,9 @@
-query DependabotPRsForApproval($owner: String!, $name: String!) {
+query DependabotPRs($owner: String!, $name: String!) {
 		repository(owner: $owner, name: $name) {
 			pullRequests(states: OPEN, first: 100) {
 				nodes {
 					number
+					title
 					headRefName
 					author { login }
 					mergeable

@@ -9,6 +9,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/spf13/cobra"
 )
 
@@ -48,15 +49,16 @@ specified by --method (merge, rebase, squash).`,
 
 		var methodFlag string
 		if mergeAfterApprove {
-			methodFlag, err = mergeMethodFlag(method)
+			mergeMethod, err := dependabot.ParseMergeMethod(method)
 			if err != nil {
 				return err
 			}
+			methodFlag = mergeMethod.Flag()
 			allowed, err := fetchAllowedMergeMethods()
 			if err != nil {
 				return err
 			}
-			if err := validateMergeMethod(method, allowed); err != nil {
+			if err := allowed.Validate(mergeMethod); err != nil {
 				return err
 			}
 		}
@@ -79,7 +81,7 @@ specified by --method (merge, rebase, squash).`,
 }
 
 type interactiveModel struct {
-	prs               []listPullRequest
+	prs               []dependabot.PullRequest
 	index             int
 	approved          []int
 	approveFailed     []prMergeFailure
@@ -428,7 +430,7 @@ func (m interactiveModel) bottomBlock() string {
 	}
 
 	status := fmt.Sprintf("Checks: %s   Mergeable: %s",
-		checksStatus(pr.StatusCheckRollup), mergeableStatus(pr.Mergeable))
+		checksStatus(pr.Checks), mergeableStatus(pr.Mergeable))
 
 	actionLabel := "Approve"
 	yLegend := "y=approve"
@@ -554,8 +556,8 @@ func (m interactiveModel) printSummary() {
 	}
 }
 
-func defaultApprove(pr listPullRequest) bool {
-	return checksStatus(pr.StatusCheckRollup) != "✗ failing"
+func defaultApprove(pr dependabot.PullRequest) bool {
+	return pr.Checks != dependabot.CheckFailing
 }
 
 func joinNumbers(nums []int) string {

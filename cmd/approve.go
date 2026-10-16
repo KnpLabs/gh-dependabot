@@ -4,26 +4,10 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
-	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/spf13/cobra"
 )
-
-type statusCheck struct {
-	Conclusion string `json:"conclusion"`
-}
-
-type author struct {
-	Login string `json:"login"`
-}
-
-type pullRequest struct {
-	Number            int           `json:"number"`
-	Author            author        `json:"author"`
-	StatusCheckRollup []statusCheck `json:"statusCheckRollup"`
-	Mergeable         string        `json:"mergeable"`
-}
 
 var approveCmd = &cobra.Command{
 	Use:   "approve [pull request numbers...]",
@@ -41,13 +25,13 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 			targetPRs = append(targetPRs, num)
 		}
 
-		prs, err := listDependabotPRs()
+		prs, err := fetchEligiblePullRequests()
 		if err != nil {
 			return err
 		}
 
 		if len(targetPRs) > 0 {
-			prs = filterByNumbers(prs, targetPRs)
+			prs = dependabot.FilterByNumbers(prs, targetPRs)
 		}
 
 		if len(prs) == 0 {
@@ -67,153 +51,6 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 
 		return nil
 	},
-}
-
-func listDependabotPRs() ([]pullRequest, error) {
-	client, err := newGraphQLClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
-	}
-
-	repo, err := repository.Current()
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine current repository: %w", err)
-	}
-
-	query := `query DependabotPRsForApproval($owner: String!, $name: String!) {
-		repository(owner: $owner, name: $name) {
-			pullRequests(states: OPEN, first: 100) {
-				nodes {
-					number
-					headRefName
-					author { login }
-					mergeable
-					commits(last: 1) {
-						nodes {
-							commit {
-								statusCheckRollup {
-									contexts(first: 100) {
-										nodes {
-											... on CheckRun { conclusion }
-											... on StatusContext { state }
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}`
-
-	variables := map[string]interface{}{
-		"owner": repo.Owner,
-		"name":  repo.Name,
-	}
-
-	var result struct {
-		Repository struct {
-			PullRequests struct {
-				Nodes []struct {
-					Number      int    `json:"number"`
-					HeadRefName string `json:"headRefName"`
-					Author      struct {
-						Login string `json:"login"`
-					} `json:"author"`
-					Mergeable string `json:"mergeable"`
-					Commits   struct {
-						Nodes []struct {
-							Commit struct {
-								StatusCheckRollup *struct {
-									Contexts struct {
-										Nodes []struct {
-											Conclusion string `json:"conclusion"`
-											State      string `json:"state"`
-										} `json:"nodes"`
-									} `json:"contexts"`
-								} `json:"statusCheckRollup"`
-							} `json:"commit"`
-						} `json:"nodes"`
-					} `json:"commits"`
-				} `json:"nodes"`
-			} `json:"pullRequests"`
-		} `json:"repository"`
-	}
-
-	if err := client.Do(query, variables, &result); err != nil {
-		return nil, fmt.Errorf("failed to query pull requests: %w", err)
-	}
-
-	var eligible []pullRequest
-	for _, node := range result.Repository.PullRequests.Nodes {
-		if !isDependabotPR(node.Author.Login, node.HeadRefName) {
-			continue
-		}
-
-		var checks []statusCheck
-		if len(node.Commits.Nodes) > 0 && node.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
-			for _, ctx := range node.Commits.Nodes[0].Commit.StatusCheckRollup.Contexts.Nodes {
-				conclusion := ctx.Conclusion
-				if conclusion == "" {
-					conclusion = mapStateToConclusion(ctx.State)
-				}
-				checks = append(checks, statusCheck{Conclusion: conclusion})
-			}
-		}
-
-		if !isEligible(checks, node.Mergeable) {
-			continue
-		}
-
-		eligible = append(eligible, pullRequest{
-			Number:            node.Number,
-			Author:            author{Login: node.Author.Login},
-			StatusCheckRollup: checks,
-			Mergeable:         node.Mergeable,
-		})
-	}
-
-	return eligible, nil
-}
-
-func isDependabotPR(login string, headRefName string) bool {
-	return isDependabotAuthor(login) || strings.HasPrefix(headRefName, "dependabot/")
-}
-
-func isDependabotAuthor(login string) bool {
-	return login == "app/dependabot" || login == "dependabot[bot]" || login == "dependabot"
-}
-
-func isEligible(checks []statusCheck, mergeable string) bool {
-	return hasPassingChecks(checks) && mergeable == "MERGEABLE"
-}
-
-func hasPassingChecks(checks []statusCheck) bool {
-	if len(checks) == 0 {
-		return true
-	}
-	for _, check := range checks {
-		if check.Conclusion != "SUCCESS" && check.Conclusion != "SKIPPED" {
-			return false
-		}
-	}
-	return true
-}
-
-func filterByNumbers(prs []pullRequest, numbers []int) []pullRequest {
-	numSet := make(map[int]bool)
-	for _, n := range numbers {
-		numSet[n] = true
-	}
-
-	var filtered []pullRequest
-	for _, pr := range prs {
-		if numSet[pr.Number] {
-			filtered = append(filtered, pr)
-		}
-	}
-	return filtered
 }
 
 func init() {

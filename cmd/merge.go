@@ -7,23 +7,18 @@ import (
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/spf13/cobra"
 )
 
-type allowedMergeMethods struct {
-	Merge  bool
-	Squash bool
-	Rebase bool
-}
-
-func fetchAllowedMergeMethods() (allowedMergeMethods, error) {
+func fetchAllowedMergeMethods() (dependabot.AllowedMergeMethods, error) {
 	client, err := newGraphQLClient()
 	if err != nil {
-		return allowedMergeMethods{}, fmt.Errorf("failed to create GraphQL client: %w", err)
+		return dependabot.AllowedMergeMethods{}, fmt.Errorf("failed to create GraphQL client: %w", err)
 	}
 	repo, err := repository.Current()
 	if err != nil {
-		return allowedMergeMethods{}, fmt.Errorf("failed to determine current repository: %w", err)
+		return dependabot.AllowedMergeMethods{}, fmt.Errorf("failed to determine current repository: %w", err)
 	}
 
 	query := `query RepoMergeMethods($owner: String!, $name: String!) {
@@ -46,45 +41,13 @@ func fetchAllowedMergeMethods() (allowedMergeMethods, error) {
 		} `json:"repository"`
 	}
 	if err := client.Do(query, variables, &result); err != nil {
-		return allowedMergeMethods{}, fmt.Errorf("failed to query repository merge settings: %w", err)
+		return dependabot.AllowedMergeMethods{}, fmt.Errorf("failed to query repository merge settings: %w", err)
 	}
-	return allowedMergeMethods{
+	return dependabot.AllowedMergeMethods{
 		Merge:  result.Repository.MergeCommitAllowed,
 		Squash: result.Repository.SquashMergeAllowed,
 		Rebase: result.Repository.RebaseMergeAllowed,
 	}, nil
-}
-
-func validateMergeMethod(method string, allowed allowedMergeMethods) error {
-	var ok bool
-	switch method {
-	case "merge":
-		ok = allowed.Merge
-	case "squash":
-		ok = allowed.Squash
-	case "rebase":
-		ok = allowed.Rebase
-	default:
-		return fmt.Errorf("invalid merge method %q: must be one of merge, rebase, squash", method)
-	}
-	if ok {
-		return nil
-	}
-
-	var enabled []string
-	if allowed.Merge {
-		enabled = append(enabled, "merge")
-	}
-	if allowed.Squash {
-		enabled = append(enabled, "squash")
-	}
-	if allowed.Rebase {
-		enabled = append(enabled, "rebase")
-	}
-	if len(enabled) == 0 {
-		return fmt.Errorf("merge method %q is not allowed on this repository (no merge methods are enabled)", method)
-	}
-	return fmt.Errorf("merge method %q is not allowed on this repository; allowed: %s", method, strings.Join(enabled, ", "))
 }
 
 var mergeCmd = &cobra.Command{
@@ -100,7 +63,7 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 		if err != nil {
 			return err
 		}
-		methodFlag, err := mergeMethodFlag(method)
+		mergeMethod, err := dependabot.ParseMergeMethod(method)
 		if err != nil {
 			return err
 		}
@@ -109,7 +72,7 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 		if err != nil {
 			return err
 		}
-		if err := validateMergeMethod(method, allowed); err != nil {
+		if err := allowed.Validate(mergeMethod); err != nil {
 			return err
 		}
 
@@ -122,13 +85,13 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 			targetPRs = append(targetPRs, num)
 		}
 
-		prs, err := listDependabotPRs()
+		prs, err := fetchEligiblePullRequests()
 		if err != nil {
 			return err
 		}
 
 		if len(targetPRs) > 0 {
-			prs = filterByNumbers(prs, targetPRs)
+			prs = dependabot.FilterByNumbers(prs, targetPRs)
 		}
 
 		if len(prs) == 0 {
@@ -143,7 +106,7 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 
 		for _, pr := range prs {
 			fmt.Printf("Merging PR #%d...\n", pr.Number)
-			args := []string{"pr", "merge", strconv.Itoa(pr.Number), methodFlag}
+			args := []string{"pr", "merge", strconv.Itoa(pr.Number), mergeMethod.Flag()}
 			if deleteBranch {
 				args = append(args, "--delete-branch")
 			}
@@ -186,19 +149,6 @@ func requestRebase(number int) error {
 		return err
 	}
 	return nil
-}
-
-func mergeMethodFlag(method string) (string, error) {
-	switch method {
-	case "merge":
-		return "--merge", nil
-	case "rebase":
-		return "--rebase", nil
-	case "squash":
-		return "--squash", nil
-	default:
-		return "", fmt.Errorf("invalid merge method %q: must be one of merge, rebase, squash", method)
-	}
 }
 
 func init() {

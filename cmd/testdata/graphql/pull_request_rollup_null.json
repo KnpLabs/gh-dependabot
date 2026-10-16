@@ -1,0 +1,18 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 10,
+            "title": "Bump foo from 1.0 to 1.1",
+            "headRefName": "dependabot/npm_and_yarn/foo-1.1",
+            "author": {"login": "dependabot"},
+            "mergeable": "MERGEABLE",
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}
+          }
+        ]
+      }
+    }
+  }
+}

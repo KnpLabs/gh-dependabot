@@ -8,27 +8,19 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
-	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
-
-type listPullRequest struct {
-	Number            int           `json:"number"`
-	Title             string        `json:"title"`
-	Author            author        `json:"author"`
-	StatusCheckRollup []statusCheck `json:"statusCheckRollup"`
-	Mergeable         string        `json:"mergeable"`
-}
 
 type listModel struct {
 	table   table.Model
 	spinner spinner.Model
 	loading bool
 	err     error
-	prs     []listPullRequest
+	prs     []dependabot.PullRequest
 }
 
 type prsLoadedMsg struct {
-	prs []listPullRequest
+	prs []dependabot.PullRequest
 }
 
 type prsErrorMsg struct {
@@ -85,7 +77,7 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rows[i] = table.Row{
 				strconv.Itoa(pr.Number),
 				truncateTitle(pr.Title, 48),
-				checksStatus(pr.StatusCheckRollup),
+				checksStatus(pr.Checks),
 				mergeableStatus(pr.Mergeable),
 			}
 		}
@@ -131,156 +123,24 @@ func fetchDependabotPRs() tea.Msg {
 	return prsLoadedMsg{prs: prs}
 }
 
-func fetchDependabotPullRequests() ([]listPullRequest, error) {
-	client, err := newGraphQLClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
-	}
-
-	repo, err := repository.Current()
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine current repository: %w", err)
-	}
-
-	query := `query DependabotPRs($owner: String!, $name: String!) {
-		repository(owner: $owner, name: $name) {
-			pullRequests(states: OPEN, first: 100) {
-				nodes {
-					number
-					title
-					headRefName
-					author { login }
-					mergeable
-					commits(last: 1) {
-						nodes {
-							commit {
-								statusCheckRollup {
-									contexts(first: 100) {
-										nodes {
-											... on CheckRun { conclusion }
-											... on StatusContext { state }
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}`
-
-	variables := map[string]interface{}{
-		"owner": repo.Owner,
-		"name":  repo.Name,
-	}
-
-	var result struct {
-		Repository struct {
-			PullRequests struct {
-				Nodes []struct {
-					Number      int    `json:"number"`
-					Title       string `json:"title"`
-					HeadRefName string `json:"headRefName"`
-					Author      struct {
-						Login string `json:"login"`
-					} `json:"author"`
-					Mergeable string `json:"mergeable"`
-					Commits   struct {
-						Nodes []struct {
-							Commit struct {
-								StatusCheckRollup *struct {
-									Contexts struct {
-										Nodes []struct {
-											Conclusion string `json:"conclusion"`
-											State      string `json:"state"`
-										} `json:"nodes"`
-									} `json:"contexts"`
-								} `json:"statusCheckRollup"`
-							} `json:"commit"`
-						} `json:"nodes"`
-					} `json:"commits"`
-				} `json:"nodes"`
-			} `json:"pullRequests"`
-		} `json:"repository"`
-	}
-
-	if err := client.Do(query, variables, &result); err != nil {
-		return nil, fmt.Errorf("failed to query pull requests: %w", err)
-	}
-
-	var dependabotPRs []listPullRequest
-	for _, node := range result.Repository.PullRequests.Nodes {
-		if !isDependabotPR(node.Author.Login, node.HeadRefName) {
-			continue
-		}
-
-		var checks []statusCheck
-		if len(node.Commits.Nodes) > 0 && node.Commits.Nodes[0].Commit.StatusCheckRollup != nil {
-			for _, ctx := range node.Commits.Nodes[0].Commit.StatusCheckRollup.Contexts.Nodes {
-				conclusion := ctx.Conclusion
-				if conclusion == "" {
-					conclusion = mapStateToConclusion(ctx.State)
-				}
-				checks = append(checks, statusCheck{Conclusion: conclusion})
-			}
-		}
-
-		dependabotPRs = append(dependabotPRs, listPullRequest{
-			Number:            node.Number,
-			Title:             node.Title,
-			Author:            author{Login: node.Author.Login},
-			StatusCheckRollup: checks,
-			Mergeable:         node.Mergeable,
-		})
-	}
-
-	return dependabotPRs, nil
-}
-
-func mapStateToConclusion(state string) string {
+func checksStatus(state dependabot.CheckState) string {
 	switch state {
-	case "SUCCESS":
-		return "SUCCESS"
-	case "PENDING", "EXPECTED":
-		return "PENDING"
-	case "FAILURE", "ERROR":
-		return "FAILURE"
+	case dependabot.CheckPassing:
+		return "✓ passing"
+	case dependabot.CheckFailing:
+		return "✗ failing"
+	case dependabot.CheckPending:
+		return "● pending"
 	default:
-		return state
-	}
-}
-
-func checksStatus(checks []statusCheck) string {
-	if len(checks) == 0 {
 		return "none"
 	}
-	allPass := true
-	hasFail := false
-	for _, c := range checks {
-		switch c.Conclusion {
-		case "SUCCESS", "SKIPPED":
-		case "FAILURE", "ERROR":
-			hasFail = true
-			allPass = false
-		default:
-			allPass = false
-		}
-	}
-	if allPass {
-		return "✓ passing"
-	}
-	if hasFail {
-		return "✗ failing"
-	}
-	return "● pending"
 }
 
-func mergeableStatus(m string) string {
+func mergeableStatus(m dependabot.Mergeability) string {
 	switch m {
-	case "MERGEABLE":
+	case dependabot.Mergeable:
 		return "✓ yes"
-	case "CONFLICTING":
+	case dependabot.Conflicting:
 		return "✗ conflict"
 	default:
 		return "● unknown"

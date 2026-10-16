@@ -1,0 +1,32 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "nodes": [
+          {
+            "number": 12,
+            "title": "Bump baz from 0.1 to 0.2",
+            "headRefName": "dependabot/pip/baz-0.2",
+            "author": {"login": "dependabot"},
+            "mergeable": "MERGEABLE",
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+              {"state": "SUCCESS"},
+              {"state": "EXPECTED"}
+            ]}}}}]}
+          },
+          {
+            "number": 13,
+            "title": "Bump qux from 5.0 to 5.1",
+            "headRefName": "dependabot/pip/qux-5.1",
+            "author": {"login": "dependabot"},
+            "mergeable": "MERGEABLE",
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+              {"state": "SUCCESS"},
+              {"state": "SUCCESS"}
+            ]}}}}]}
+          }
+        ]
+      }
+    }
+  }
+}
