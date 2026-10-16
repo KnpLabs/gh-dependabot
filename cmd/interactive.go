@@ -124,6 +124,8 @@ type approveDoneMsg struct {
 type mergeDoneMsg struct {
 	number int
 	err    error
+	// rebase is set when the merge failed on conflicts and a rebase was requested.
+	rebase *rebaseDoneMsg
 }
 
 type rebaseDoneMsg struct {
@@ -193,7 +195,11 @@ func mergePRCmd(number int, methodFlag string, deleteBranch bool) tea.Cmd {
 			if stderr.Len() > 0 {
 				msg = strings.TrimSpace(stderr.String())
 			}
-			return mergeDoneMsg{number: number, err: fmt.Errorf("%s", msg)}
+			done := mergeDoneMsg{number: number, err: fmt.Errorf("%s", msg)}
+			if isMergeConflict(number, stderr.String()) {
+				done.rebase = &rebaseDoneMsg{number: number, err: requestRebase(number)}
+			}
+			return done
 		}
 		return mergeDoneMsg{number: number}
 	}
@@ -201,15 +207,7 @@ func mergePRCmd(number int, methodFlag string, deleteBranch bool) tea.Cmd {
 
 func rebasePRCmd(number int) tea.Cmd {
 	return func() tea.Msg {
-		_, stderr, err := gh.Exec("pr", "comment", strconv.Itoa(number), "--body", "@dependabot rebase")
-		if err != nil {
-			msg := err.Error()
-			if stderr.Len() > 0 {
-				msg = strings.TrimSpace(stderr.String())
-			}
-			return rebaseDoneMsg{number: number, err: fmt.Errorf("%s", msg)}
-		}
-		return rebaseDoneMsg{number: number}
+		return rebaseDoneMsg{number: number, err: requestRebase(number)}
 	}
 }
 
@@ -271,6 +269,13 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pending--
 		if msg.err != nil {
 			m.mergeFailed = append(m.mergeFailed, prMergeFailure{number: msg.number, err: msg.err})
+			if r := msg.rebase; r != nil {
+				if r.err != nil {
+					m.rebaseFailed = append(m.rebaseFailed, prMergeFailure{number: r.number, err: r.err})
+				} else {
+					m.rebased = append(m.rebased, r.number)
+				}
+			}
 		} else {
 			m.merged = append(m.merged, msg.number)
 		}
