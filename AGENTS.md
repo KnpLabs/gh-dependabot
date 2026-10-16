@@ -22,14 +22,9 @@ make clean   # remove the built binary
 
 Tests are table-driven, stdlib `testing` only, next to the code (`cmd/*_test.go`, `internal/*/*_test.go`), with fixtures in the sibling `testdata/` directories.
 
-`internal/github` is tested on its own with a fake `exec` (exact `gh` args, stderr → error, conflict → `ErrConflict`) and a fake `http.RoundTripper` serving GraphQL fixtures.
+`internal/github` is tested on its own with a fake `exec` (exact `gh` args, stderr → error, conflict → `ErrConflict`) and a fake `http.RoundTripper` serving GraphQL fixtures from `internal/github/testdata/`. The queries sent are snapshotted in `internal/github/testdata/golden/*.graphql`; after an intended query change, regenerate them with `go test ./internal/github -update` and review the diff.
 
-Commands are tested end to end through `newFakeGitHub` (`cmd/harness_test.go`), which swaps the `newClient` package variable from `root.go` for a real `github.New` wired on fakes:
-- GraphQL responses are served from `cmd/testdata/graphql/*.json`, keyed by operation name; the requests sent are snapshotted in `cmd/testdata/golden/*.graphql`.
-- `gh` invocations are recorded and asserted with `assertExecs`.
-- After an intended query change, regenerate the snapshots with `go test ./cmd -update` and review the diff.
-
-Commands always get GitHub access through `newClient()`; `gh.Exec`, `api.DefaultGraphQLClient` and `repository.Current` are only referenced from `github.Default`, or the call escapes the fake. The TUI's `interactive` flow itself isn't covered.
+Commands are tested through a fake `github.Client` (`cmd/harness_test.go`): `newFakeClient` swaps the `newClient` package variable from `root.go` and records every call, and `runCommand` captures stdout/stderr and resets flags between runs. Commands must therefore get GitHub access only through `newClient()` and write only through `cmd.OutOrStdout()` / `cmd.ErrOrStderr()`, never `fmt.Print*` / `os.Stdout`. The TUI's `interactive` flow itself isn't covered (its summary is).
 
 To try a change, `make build` then run the binary from inside a repo that has open Dependabot PRs: `/path/to/gh-dependabot/gh-dependabot [interactive|approve|merge]`. It relies on an authenticated `gh` and infers the repo from the cwd, so there is no need to `gh extension install .` between rebuilds.
 
@@ -42,6 +37,7 @@ Releases are cut by pushing a `v*` tag; `.github/workflows/release.yml` uses `cl
 `internal/dependabot/` is the pure domain (no I/O): `PullRequest`, `CheckState`, `Mergeability`, eligibility rules and `MergeMethod` parsing/validation. Business rules live there and must never depend on display strings; `checksStatus` / `mergeableStatus` in `cmd/list.go` only render them.
 
 Key conventions:
+- `approve` and `merge` share their plumbing in `cmd/bulk.go`: `parsePRNumbers`, `resolveMergeMethod` (parse + check against the repo's allowed methods, also used by `interactive --merge`) and `runOnEligiblePRs`, the list → filter → act loop driven by a `bulkAction`.
 - All GitHub I/O lives behind the `github.Client` interface (`internal/github`). Reads go through the GraphQL client, mutations shell out to `gh pr ...` through the injected `exec`, and every `gh` call goes through `run()`, which turns stderr into the error message. `Merge` returns an error wrapping `github.ErrConflict` when the PR conflicts, and callers decide whether to `RequestRebase`.
 - PRs are fetched by a single query, `ListOpenDependabotPRs` (`internal/github/pullrequests.go`), shared by every command.
 - A PR counts as Dependabot's if the author is `dependabot[bot]` / `app/dependabot` / `dependabot` **or** the head branch starts with `dependabot/`.

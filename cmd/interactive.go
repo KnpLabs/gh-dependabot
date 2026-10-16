@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -40,7 +41,7 @@ specified by --method (merge, rebase, squash).`,
 		if err != nil {
 			return err
 		}
-		method, err := cmd.Flags().GetString("method")
+		methodFlag, err := cmd.Flags().GetString("method")
 		if err != nil {
 			return err
 		}
@@ -56,15 +57,8 @@ specified by --method (merge, rebase, squash).`,
 
 		var mergeMethod dependabot.MergeMethod
 		if mergeAfterApprove {
-			mergeMethod, err = dependabot.ParseMergeMethod(method)
+			mergeMethod, err = resolveMergeMethod(client, methodFlag)
 			if err != nil {
-				return err
-			}
-			allowed, err := client.AllowedMergeMethods()
-			if err != nil {
-				return err
-			}
-			if err := allowed.Validate(mergeMethod); err != nil {
 				return err
 			}
 		}
@@ -80,7 +74,7 @@ specified by --method (merge, rebase, squash).`,
 			return fmt.Errorf("failed to run TUI: %w", err)
 		}
 		if im, ok := final.(interactiveModel); ok {
-			im.printSummary()
+			im.printSummary(cmd.OutOrStdout())
 		}
 		return nil
 	},
@@ -474,59 +468,59 @@ func wrapWords(s string, width int) []string {
 	return lines
 }
 
-func (m interactiveModel) printSummary() {
+func (m interactiveModel) printSummary(w io.Writer) {
 	if m.err != nil {
 		return
 	}
 	if len(m.prs) == 0 {
-		fmt.Println("No open dependabot pull requests found.")
+		fmt.Fprintln(w, "No open dependabot pull requests found.")
 		return
 	}
-	fmt.Println()
+	fmt.Fprintln(w)
 	if len(m.approved) > 0 {
-		fmt.Printf("Approved (%d): %s\n", len(m.approved), joinNumbers(m.approved))
+		fmt.Fprintf(w, "Approved (%d): %s\n", len(m.approved), joinNumbers(m.approved))
 	} else {
-		fmt.Println("Approved (0): —")
+		fmt.Fprintln(w, "Approved (0): —")
 	}
 	if len(m.approveFailed) > 0 {
-		fmt.Printf("Approve failed (%d):\n", len(m.approveFailed))
+		fmt.Fprintf(w, "Approve failed (%d):\n", len(m.approveFailed))
 		for _, f := range m.approveFailed {
-			fmt.Printf("  #%d: %v\n", f.number, f.err)
+			fmt.Fprintf(w, "  #%d: %v\n", f.number, f.err)
 		}
 	}
 	if m.mergeAfterApprove {
 		if len(m.merged) > 0 {
-			fmt.Printf("Merged   (%d): %s\n", len(m.merged), joinNumbers(m.merged))
+			fmt.Fprintf(w, "Merged   (%d): %s\n", len(m.merged), joinNumbers(m.merged))
 		} else {
-			fmt.Println("Merged   (0): —")
+			fmt.Fprintln(w, "Merged   (0): —")
 		}
 		if len(m.mergeFailed) > 0 {
-			fmt.Printf("Merge failed (%d):\n", len(m.mergeFailed))
+			fmt.Fprintf(w, "Merge failed (%d):\n", len(m.mergeFailed))
 			for _, f := range m.mergeFailed {
-				fmt.Printf("  #%d: %v\n", f.number, f.err)
+				fmt.Fprintf(w, "  #%d: %v\n", f.number, f.err)
 			}
 		}
 	}
 	if len(m.rebased) > 0 {
-		fmt.Printf("Rebased  (%d): %s\n", len(m.rebased), joinNumbers(m.rebased))
+		fmt.Fprintf(w, "Rebased  (%d): %s\n", len(m.rebased), joinNumbers(m.rebased))
 	}
 	if len(m.rebaseFailed) > 0 {
-		fmt.Printf("Rebase failed (%d):\n", len(m.rebaseFailed))
+		fmt.Fprintf(w, "Rebase failed (%d):\n", len(m.rebaseFailed))
 		for _, f := range m.rebaseFailed {
-			fmt.Printf("  #%d: %v\n", f.number, f.err)
+			fmt.Fprintf(w, "  #%d: %v\n", f.number, f.err)
 		}
 	}
 	if len(m.skipped) > 0 {
-		fmt.Printf("Skipped  (%d): %s\n", len(m.skipped), joinNumbers(m.skipped))
+		fmt.Fprintf(w, "Skipped  (%d): %s\n", len(m.skipped), joinNumbers(m.skipped))
 	} else {
-		fmt.Println("Skipped  (0): —")
+		fmt.Fprintln(w, "Skipped  (0): —")
 	}
 	if m.quitted && m.index < len(m.prs) {
 		var remaining []int
 		for _, pr := range m.prs[m.index:] {
 			remaining = append(remaining, pr.Number)
 		}
-		fmt.Printf("Unreviewed (%d): %s\n", len(remaining), joinNumbers(remaining))
+		fmt.Fprintf(w, "Unreviewed (%d): %s\n", len(remaining), joinNumbers(remaining))
 	}
 }
 
