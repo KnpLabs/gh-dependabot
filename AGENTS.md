@@ -14,13 +14,18 @@ Prefer the `Makefile` targets over calling `go` directly (run `make` to list the
 make build   # build the gh-dependabot binary
 make fmt     # format the code (gofmt -w)
 make lint    # gofmt check + go vet (no linter config in the repo)
-make test    # go test ./...
+make test    # go test -race -cover ./...
 make check   # lint + test + build, run before committing
 make tidy    # go mod tidy
 make clean   # remove the built binary
 ```
 
-There is no test suite yet (`make test` compiles but finds no tests).
+Tests are table-driven, stdlib `testing` only, next to the code (`cmd/*_test.go`), with fixtures in `cmd/testdata/`. Commands are tested end to end through `newFakeGitHub` (`cmd/harness_test.go`), which swaps the `newGraphQLClient` and `ghExec` package variables from `root.go`:
+- GraphQL responses are served from `cmd/testdata/graphql/*.json`, keyed by operation name; the requests sent are snapshotted in `cmd/testdata/golden/*.graphql`.
+- `gh` invocations are recorded and asserted with `assertExecs`.
+- After an intended query change, regenerate the snapshots with `go test ./cmd -update` and review the diff.
+
+Always go through `ghExec` / `newGraphQLClient`, never `gh.Exec` / `api.DefaultGraphQLClient` directly, or the call escapes the fake. The TUI's `interactive` flow itself isn't covered.
 
 To try a change, `make build` then run the binary from inside a repo that has open Dependabot PRs: `/path/to/gh-dependabot/gh-dependabot [interactive|approve|merge]`. It relies on an authenticated `gh` and infers the repo from the cwd, so there is no need to `gh extension install .` between rebuilds.
 
@@ -35,3 +40,7 @@ Key conventions:
 - A PR counts as Dependabot's if the author is `dependabot[bot]` / `app/dependabot` / `dependabot` **or** the head branch starts with `dependabot/`.
 - GraphQL open PRs only. Check contexts mix `CheckRun.conclusion` and `StatusContext.state`; the state is normalised through `mapStateToConclusion`.
 - Bubble Tea/Bubbles are **v2**, imported from `charm.land/...` (not `github.com/charmbracelet/...`): `View()` returns `tea.View` and keys arrive as `tea.KeyPressMsg`.
+
+## Code style
+
+Don't add comments to the code (doc comments included) unless the user explicitly asks for them. Rely on clear names instead. Leave existing comments alone.

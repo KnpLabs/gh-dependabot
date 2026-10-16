@@ -1,0 +1,9 @@
+query RepoMergeMethods($owner: String!, $name: String!) {
+		repository(owner: $owner, name: $name) {
+			mergeCommitAllowed
+			squashMergeAllowed
+			rebaseMergeAllowed
+		}
+	}
+
+variables: {"name":"fake-repo","owner":"knplabs"}

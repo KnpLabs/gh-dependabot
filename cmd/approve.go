@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cli/go-gh/v2"
-	"github.com/cli/go-gh/v2/pkg/api"
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/spf13/cobra"
 )
@@ -48,7 +46,6 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 			return err
 		}
 
-		// Filter to target PRs if specified
 		if len(targetPRs) > 0 {
 			prs = filterByNumbers(prs, targetPRs)
 		}
@@ -60,7 +57,7 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 
 		for _, pr := range prs {
 			fmt.Printf("Approving PR #%d...\n", pr.Number)
-			_, _, err := gh.Exec("pr", "review", strconv.Itoa(pr.Number), "--approve")
+			_, _, err := ghExec("pr", "review", strconv.Itoa(pr.Number), "--approve")
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to approve PR #%d: %v\n", pr.Number, err)
 				continue
@@ -73,7 +70,7 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 }
 
 func listDependabotPRs() ([]pullRequest, error) {
-	client, err := api.DefaultGraphQLClient()
+	client, err := newGraphQLClient()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
 	}
@@ -165,10 +162,7 @@ func listDependabotPRs() ([]pullRequest, error) {
 			}
 		}
 
-		if !hasPassingChecks(checks) {
-			continue
-		}
-		if node.Mergeable != "MERGEABLE" {
+		if !isEligible(checks, node.Mergeable) {
 			continue
 		}
 
@@ -191,8 +185,11 @@ func isDependabotAuthor(login string) bool {
 	return login == "app/dependabot" || login == "dependabot[bot]" || login == "dependabot"
 }
 
+func isEligible(checks []statusCheck, mergeable string) bool {
+	return hasPassingChecks(checks) && mergeable == "MERGEABLE"
+}
+
 func hasPassingChecks(checks []statusCheck) bool {
-	// No checks is acceptable (matches the jq logic where null is allowed)
 	if len(checks) == 0 {
 		return true
 	}

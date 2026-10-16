@@ -1,0 +1,34 @@
+{
+  "none": [],
+  "all_passing": [
+    {"conclusion": "SUCCESS"},
+    {"conclusion": "SUCCESS"}
+  ],
+  "passing_with_skipped": [
+    {"conclusion": "SUCCESS"},
+    {"conclusion": "SKIPPED"}
+  ],
+  "skipped_only": [
+    {"conclusion": "SKIPPED"}
+  ],
+  "failing_among_pending": [
+    {"conclusion": "PENDING"},
+    {"conclusion": "FAILURE"},
+    {"conclusion": "PENDING"}
+  ],
+  "error_among_passing": [
+    {"conclusion": "SUCCESS"},
+    {"conclusion": "ERROR"}
+  ],
+  "pending_only": [
+    {"conclusion": "PENDING"},
+    {"conclusion": "PENDING"}
+  ],
+  "pending_among_passing": [
+    {"conclusion": "SUCCESS"},
+    {"conclusion": "PENDING"}
+  ],
+  "unknown_conclusion": [
+    {"conclusion": "NEUTRAL"}
+  ]
+}

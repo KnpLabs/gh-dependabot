@@ -26,7 +26,7 @@ lint: ## Run static checks (gofmt + go vet)
 
 .PHONY: test
 test: ## Run tests
-	go test ./...
+	go test -race -cover ./...
 
 .PHONY: tidy
 tidy: ## Tidy go.mod / go.sum
