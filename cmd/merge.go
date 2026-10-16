@@ -1,54 +1,15 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
-	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
+	"github.com/knplabs/gh-dependabot/internal/github"
 	"github.com/spf13/cobra"
 )
-
-func fetchAllowedMergeMethods() (dependabot.AllowedMergeMethods, error) {
-	client, err := newGraphQLClient()
-	if err != nil {
-		return dependabot.AllowedMergeMethods{}, fmt.Errorf("failed to create GraphQL client: %w", err)
-	}
-	repo, err := repository.Current()
-	if err != nil {
-		return dependabot.AllowedMergeMethods{}, fmt.Errorf("failed to determine current repository: %w", err)
-	}
-
-	query := `query RepoMergeMethods($owner: String!, $name: String!) {
-		repository(owner: $owner, name: $name) {
-			mergeCommitAllowed
-			squashMergeAllowed
-			rebaseMergeAllowed
-		}
-	}`
-	variables := map[string]interface{}{
-		"owner": repo.Owner,
-		"name":  repo.Name,
-	}
-
-	var result struct {
-		Repository struct {
-			MergeCommitAllowed bool `json:"mergeCommitAllowed"`
-			SquashMergeAllowed bool `json:"squashMergeAllowed"`
-			RebaseMergeAllowed bool `json:"rebaseMergeAllowed"`
-		} `json:"repository"`
-	}
-	if err := client.Do(query, variables, &result); err != nil {
-		return dependabot.AllowedMergeMethods{}, fmt.Errorf("failed to query repository merge settings: %w", err)
-	}
-	return dependabot.AllowedMergeMethods{
-		Merge:  result.Repository.MergeCommitAllowed,
-		Squash: result.Repository.SquashMergeAllowed,
-		Rebase: result.Repository.RebaseMergeAllowed,
-	}, nil
-}
 
 var mergeCmd = &cobra.Command{
 	Use:   "merge [pull request numbers...]",
@@ -68,7 +29,12 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 			return err
 		}
 
-		allowed, err := fetchAllowedMergeMethods()
+		client, err := newClient()
+		if err != nil {
+			return err
+		}
+
+		allowed, err := client.AllowedMergeMethods()
 		if err != nil {
 			return err
 		}
@@ -85,7 +51,7 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 			targetPRs = append(targetPRs, num)
 		}
 
-		prs, err := fetchEligiblePullRequests()
+		prs, err := fetchEligiblePullRequests(client)
 		if err != nil {
 			return err
 		}
@@ -106,18 +72,10 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 
 		for _, pr := range prs {
 			fmt.Printf("Merging PR #%d...\n", pr.Number)
-			args := []string{"pr", "merge", strconv.Itoa(pr.Number), mergeMethod.Flag()}
-			if deleteBranch {
-				args = append(args, "--delete-branch")
-			}
-			_, stderr, err := ghExec(args...)
-			if err != nil {
+			if err := client.Merge(pr.Number, mergeMethod, deleteBranch); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to merge PR #%d: %v\n", pr.Number, err)
-				if stderr.Len() > 0 {
-					fmt.Fprintf(os.Stderr, "%s\n", stderr.String())
-				}
-				if isMergeConflict(pr.Number, stderr.String()) {
-					if err := requestRebase(pr.Number); err != nil {
+				if errors.Is(err, github.ErrConflict) {
+					if err := client.RequestRebase(pr.Number); err != nil {
 						fmt.Fprintf(os.Stderr, "Failed to request a rebase of PR #%d: %v\n", pr.Number, err)
 					} else {
 						fmt.Printf("PR #%d has conflicts, asked Dependabot to rebase it.\n", pr.Number)
@@ -130,25 +88,6 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 
 		return nil
 	},
-}
-
-func isMergeConflict(number int, stderr string) bool {
-	if strings.Contains(stderr, "cannot be cleanly created") {
-		return true
-	}
-	stdout, _, err := ghExec("pr", "view", strconv.Itoa(number), "--json", "mergeable", "--jq", ".mergeable")
-	return err == nil && strings.TrimSpace(stdout.String()) == "CONFLICTING"
-}
-
-func requestRebase(number int) error {
-	_, stderr, err := ghExec("pr", "comment", strconv.Itoa(number), "--body", "@dependabot rebase")
-	if err != nil {
-		if stderr.Len() > 0 {
-			return fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
-		}
-		return err
-	}
-	return nil
 }
 
 func init() {

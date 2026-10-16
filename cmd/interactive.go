@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
+	"github.com/knplabs/gh-dependabot/internal/github"
 	"github.com/spf13/cobra"
 )
 
@@ -47,14 +49,18 @@ specified by --method (merge, rebase, squash).`,
 			return err
 		}
 
-		var methodFlag string
+		client, err := newClient()
+		if err != nil {
+			return err
+		}
+
+		var mergeMethod dependabot.MergeMethod
 		if mergeAfterApprove {
-			mergeMethod, err := dependabot.ParseMergeMethod(method)
+			mergeMethod, err = dependabot.ParseMergeMethod(method)
 			if err != nil {
 				return err
 			}
-			methodFlag = mergeMethod.Flag()
-			allowed, err := fetchAllowedMergeMethods()
+			allowed, err := client.AllowedMergeMethods()
 			if err != nil {
 				return err
 			}
@@ -63,9 +69,9 @@ specified by --method (merge, rebase, squash).`,
 			}
 		}
 
-		m := newInteractiveModel()
+		m := newInteractiveModel(client)
 		m.mergeAfterApprove = mergeAfterApprove
-		m.mergeMethodFlag = methodFlag
+		m.mergeMethod = mergeMethod
 		m.deleteBranch = deleteBranch
 
 		p := tea.NewProgram(m)
@@ -81,6 +87,7 @@ specified by --method (merge, rebase, squash).`,
 }
 
 type interactiveModel struct {
+	client            github.Client
 	prs               []dependabot.PullRequest
 	index             int
 	approved          []int
@@ -97,7 +104,7 @@ type interactiveModel struct {
 	loadingDiff       bool
 	pending           int
 	mergeAfterApprove bool
-	mergeMethodFlag   string
+	mergeMethod       dependabot.MergeMethod
 	deleteBranch      bool
 	err               error
 	width             int
@@ -133,10 +140,11 @@ type rebaseDoneMsg struct {
 	err    error
 }
 
-func newInteractiveModel() interactiveModel {
+func newInteractiveModel(client github.Client) interactiveModel {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
 	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
 	return interactiveModel{
+		client:      client,
 		spinner:     s,
 		viewport:    vp,
 		loadingList: true,
@@ -144,70 +152,36 @@ func newInteractiveModel() interactiveModel {
 }
 
 func (m interactiveModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, fetchPRsForInteractive)
+	return tea.Batch(m.spinner.Tick, fetchDependabotPRsCmd(m.client))
 }
 
-func fetchPRsForInteractive() tea.Msg {
-	prs, err := fetchDependabotPullRequests()
-	if err != nil {
-		return prsErrorMsg{err: err}
-	}
-	return prsLoadedMsg{prs: prs}
-}
-
-func fetchDiffCmd(number int) tea.Cmd {
+func fetchDiffCmd(client github.Client, number int) tea.Cmd {
 	return func() tea.Msg {
-		stdout, stderr, err := ghExec("pr", "diff", strconv.Itoa(number))
-		if err != nil {
-			msg := err.Error()
-			if stderr.Len() > 0 {
-				msg = strings.TrimSpace(stderr.String())
-			}
-			return diffLoadedMsg{number: number, err: fmt.Errorf("%s", msg)}
-		}
-		return diffLoadedMsg{number: number, diff: stdout.String()}
+		diff, err := client.Diff(number)
+		return diffLoadedMsg{number: number, diff: diff, err: err}
 	}
 }
 
-func approvePRCmd(number int) tea.Cmd {
+func approvePRCmd(client github.Client, number int) tea.Cmd {
 	return func() tea.Msg {
-		_, stderr, err := ghExec("pr", "review", strconv.Itoa(number), "--approve")
-		if err != nil {
-			msg := err.Error()
-			if stderr.Len() > 0 {
-				msg = strings.TrimSpace(stderr.String())
-			}
-			return approveDoneMsg{number: number, err: fmt.Errorf("%s", msg)}
-		}
-		return approveDoneMsg{number: number}
+		return approveDoneMsg{number: number, err: client.Approve(number)}
 	}
 }
 
-func mergePRCmd(number int, methodFlag string, deleteBranch bool) tea.Cmd {
+func mergePRCmd(client github.Client, number int, method dependabot.MergeMethod, deleteBranch bool) tea.Cmd {
 	return func() tea.Msg {
-		args := []string{"pr", "merge", strconv.Itoa(number), methodFlag}
-		if deleteBranch {
-			args = append(args, "--delete-branch")
+		err := client.Merge(number, method, deleteBranch)
+		done := mergeDoneMsg{number: number, err: err}
+		if errors.Is(err, github.ErrConflict) {
+			done.rebase = &rebaseDoneMsg{number: number, err: client.RequestRebase(number)}
 		}
-		_, stderr, err := ghExec(args...)
-		if err != nil {
-			msg := err.Error()
-			if stderr.Len() > 0 {
-				msg = strings.TrimSpace(stderr.String())
-			}
-			done := mergeDoneMsg{number: number, err: fmt.Errorf("%s", msg)}
-			if isMergeConflict(number, stderr.String()) {
-				done.rebase = &rebaseDoneMsg{number: number, err: requestRebase(number)}
-			}
-			return done
-		}
-		return mergeDoneMsg{number: number}
+		return done
 	}
 }
 
-func rebasePRCmd(number int) tea.Cmd {
+func rebasePRCmd(client github.Client, number int) tea.Cmd {
 	return func() tea.Msg {
-		return rebaseDoneMsg{number: number, err: requestRebase(number)}
+		return rebaseDoneMsg{number: number, err: client.RequestRebase(number)}
 	}
 }
 
@@ -228,7 +202,7 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.resizeViewport()
 		m.loadingDiff = true
-		return m, tea.Batch(m.spinner.Tick, fetchDiffCmd(m.prs[0].Number))
+		return m, tea.Batch(m.spinner.Tick, fetchDiffCmd(m.client, m.prs[0].Number))
 
 	case prsErrorMsg:
 		m.loadingList = false
@@ -257,7 +231,7 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.approved = append(m.approved, msg.number)
 			if m.mergeAfterApprove {
 				m.pending++
-				return m, tea.Batch(m.spinner.Tick, mergePRCmd(msg.number, m.mergeMethodFlag, m.deleteBranch))
+				return m, tea.Batch(m.spinner.Tick, mergePRCmd(m.client, msg.number, m.mergeMethod, m.deleteBranch))
 			}
 		}
 		if m.done && m.pending == 0 {
@@ -331,19 +305,19 @@ func (m interactiveModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "y", "Y":
 		number := m.prs[m.index].Number
 		m.pending++
-		return m, tea.Batch(m.spinner.Tick, approvePRCmd(number), m.advance())
+		return m, tea.Batch(m.spinner.Tick, approvePRCmd(m.client, number), m.advance())
 	case "n", "N":
 		m.skipped = append(m.skipped, m.prs[m.index].Number)
 		return m, m.advance()
 	case "r", "R":
 		number := m.prs[m.index].Number
 		m.pending++
-		return m, tea.Batch(m.spinner.Tick, rebasePRCmd(number), m.advance())
+		return m, tea.Batch(m.spinner.Tick, rebasePRCmd(m.client, number), m.advance())
 	case "enter":
 		if defaultApprove(m.prs[m.index]) {
 			number := m.prs[m.index].Number
 			m.pending++
-			return m, tea.Batch(m.spinner.Tick, approvePRCmd(number), m.advance())
+			return m, tea.Batch(m.spinner.Tick, approvePRCmd(m.client, number), m.advance())
 		}
 		m.skipped = append(m.skipped, m.prs[m.index].Number)
 		return m, m.advance()
@@ -367,7 +341,7 @@ func (m *interactiveModel) advance() tea.Cmd {
 	m.viewport.SetContent("")
 	m.resizeViewport()
 	m.loadingDiff = true
-	return tea.Batch(m.spinner.Tick, fetchDiffCmd(m.prs[m.index].Number))
+	return tea.Batch(m.spinner.Tick, fetchDiffCmd(m.client, m.prs[m.index].Number))
 }
 
 func (m interactiveModel) View() tea.View {

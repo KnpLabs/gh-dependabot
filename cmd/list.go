@@ -9,9 +9,11 @@ import (
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
+	"github.com/knplabs/gh-dependabot/internal/github"
 )
 
 type listModel struct {
+	client  github.Client
 	table   table.Model
 	spinner spinner.Model
 	loading bool
@@ -27,7 +29,7 @@ type prsErrorMsg struct {
 	err error
 }
 
-func newListModel() listModel {
+func newListModel(client github.Client) listModel {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
 
 	columns := []table.Column{
@@ -51,6 +53,7 @@ func newListModel() listModel {
 	)
 
 	return listModel{
+		client:  client,
 		table:   t,
 		spinner: s,
 		loading: true,
@@ -58,7 +61,7 @@ func newListModel() listModel {
 }
 
 func (m listModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, fetchDependabotPRs)
+	return tea.Batch(m.spinner.Tick, fetchDependabotPRsCmd(m.client))
 }
 
 func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -115,12 +118,14 @@ func (m listModel) View() tea.View {
 	return tea.NewView(s)
 }
 
-func fetchDependabotPRs() tea.Msg {
-	prs, err := fetchDependabotPullRequests()
-	if err != nil {
-		return prsErrorMsg{err: err}
+func fetchDependabotPRsCmd(client github.Client) tea.Cmd {
+	return func() tea.Msg {
+		prs, err := client.ListOpenDependabotPRs()
+		if err != nil {
+			return prsErrorMsg{err: err}
+		}
+		return prsLoadedMsg{prs: prs}
 	}
-	return prsLoadedMsg{prs: prs}
 }
 
 func checksStatus(state dependabot.CheckState) string {
