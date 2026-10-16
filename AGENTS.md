@@ -24,7 +24,7 @@ Tests are table-driven, stdlib `testing` only, next to the code (`cmd/*_test.go`
 
 `internal/github` is tested on its own with a fake `exec` (exact `gh` args, stderr → error, conflict → `ErrConflict`) and a fake `http.RoundTripper` serving GraphQL fixtures from `internal/github/testdata/`. The queries sent are snapshotted in `internal/github/testdata/golden/*.graphql`; after an intended query change, regenerate them with `go test ./internal/github -update` and review the diff.
 
-Commands are tested through a fake `github.Client` (`cmd/harness_test.go`): `newFakeClient` swaps the `newClient` package variable from `root.go` and records every call, and `runCommand` captures stdout/stderr and resets flags between runs. Commands must therefore get GitHub access only through `newClient()` and write only through `cmd.OutOrStdout()` / `cmd.ErrOrStderr()`, never `fmt.Print*` / `os.Stdout`. The TUI's `interactive` flow itself isn't covered (its summary is).
+Commands are tested through a fake `github.Client` (`cmd/harness_test.go`): `newFakeClient` swaps the `newClient` package variable from `root.go` and records every call, and `runCommand` captures stdout/stderr and resets flags between runs. Commands must therefore get GitHub access only through `newClient()` and write only through `cmd.OutOrStdout()` / `cmd.ErrOrStderr()`, never `fmt.Print*` / `os.Stdout`. The `interactive` TUI is tested without a terminal (`cmd/interactive_model_test.go`): `tuiDriver` feeds messages to `Update`, runs the returned `tea.Cmd`s synchronously against the fake client (expanding `tea.BatchMsg`, dropping spinner ticks, recording `tea.QuitMsg`), and `keyPress` builds `tea.KeyPressMsg` values directly. Hold the messages returned by `press` instead of `settle`-ing them to simulate requests still in flight. Don't use `teatest`. The summary is snapshotted in `cmd/testdata/golden/summary/*.txt` (`go test ./cmd -update`).
 
 To try a change, `make build` then run the binary from inside a repo that has open Dependabot PRs: `/path/to/gh-dependabot/gh-dependabot [interactive|approve|merge]`. It relies on an authenticated `gh` and infers the repo from the cwd, so there is no need to `gh extension install .` between rebuilds.
 
@@ -32,7 +32,7 @@ Releases are cut by pushing a `v*` tag; `.github/workflows/release.yml` uses `cl
 
 ## Architecture
 
-`cmd/` holds the Cobra wiring and the TUI; `main.go` just calls `cmd.Execute()`. Each subcommand registers itself on `rootCmd` from its file's `init()`.
+`cmd/` holds the Cobra wiring and the TUIs (`interactive.go` is the command, with its model/`Update` in `interactive_model.go`, the `tea.Cmd`s calling the client in `interactive_commands.go` and rendering plus summary in `interactive_view.go`); `main.go` just calls `cmd.Execute()`. Each subcommand registers itself on `rootCmd` from its file's `init()`.
 
 `internal/dependabot/` is the pure domain (no I/O): `PullRequest`, `CheckState`, `Mergeability`, eligibility rules and `MergeMethod` parsing/validation. Business rules live there and must never depend on display strings; `checksStatus` / `mergeableStatus` in `cmd/list.go` only render them.
 

@@ -2,7 +2,10 @@ package cmd
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -70,7 +73,7 @@ func (f *fakeClient) RequestRebase(number int) error {
 
 func (f *fakeClient) Diff(number int) (string, error) {
 	f.calls = append(f.calls, fmt.Sprintf("Diff %d", number))
-	return "", nil
+	return fmt.Sprintf("diff of #%d", number), nil
 }
 
 func (f *fakeClient) assertCalls(t *testing.T, want []string) {
@@ -82,6 +85,8 @@ func (f *fakeClient) assertCalls(t *testing.T, want []string) {
 		t.Errorf("client calls mismatch\n got: %q\nwant: %q", f.calls, want)
 	}
 }
+
+var update = flag.Bool("update", false, "rewrite golden files in testdata/golden")
 
 type commandResult struct {
 	stdout string
@@ -125,6 +130,28 @@ func assertOutput(t *testing.T, got commandResult, wantStdout, wantStderr string
 	}
 	if got.stderr != wantStderr {
 		t.Errorf("stderr mismatch\n got: %q\nwant: %q", got.stderr, wantStderr)
+	}
+}
+
+func assertGolden(t *testing.T, name, got string) {
+	t.Helper()
+	path := filepath.Join("testdata", "golden", name)
+	if *update {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading golden file (run `go test ./cmd -update` to create it): %v", err)
+	}
+	if got != string(want) {
+		t.Errorf("output differs from %s (run `go test ./cmd -update` if the change is intended)\n--- got ---\n%s\n--- want ---\n%s", path, got, want)
 	}
 }
 
