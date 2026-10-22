@@ -10,6 +10,7 @@ import (
 )
 
 type bulkAction struct {
+	selects   func(dependabot.PullRequest) bool
 	verb      string
 	progress  string
 	done      string
@@ -18,7 +19,7 @@ type bulkAction struct {
 }
 
 func runOnEligiblePRs(cmd *cobra.Command, client github.Client, numbers []int, action bulkAction) error {
-	prs, err := fetchEligiblePullRequests(client)
+	prs, err := fetchPullRequests(client, action.selects)
 	if err != nil {
 		return err
 	}
@@ -48,18 +49,18 @@ func runOnEligiblePRs(cmd *cobra.Command, client github.Client, numbers []int, a
 	return nil
 }
 
-func fetchEligiblePullRequests(client github.Client) ([]dependabot.PullRequest, error) {
+func fetchPullRequests(client github.Client, selects func(dependabot.PullRequest) bool) ([]dependabot.PullRequest, error) {
 	prs, err := client.ListOpenDependabotPRs()
 	if err != nil {
 		return nil, err
 	}
-	var eligible []dependabot.PullRequest
+	var selected []dependabot.PullRequest
 	for _, pr := range prs {
-		if pr.Eligible() {
-			eligible = append(eligible, pr)
+		if selects(pr) {
+			selected = append(selected, pr)
 		}
 	}
-	return eligible, nil
+	return selected, nil
 }
 
 func parsePRNumbers(args []string) ([]int, error) {

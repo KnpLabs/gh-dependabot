@@ -85,6 +85,33 @@ func TestEligible(t *testing.T) {
 	}
 }
 
+func TestNeedsRebase(t *testing.T) {
+	tests := []struct {
+		name      string
+		checks    CheckState
+		mergeable Mergeability
+		want      bool
+	}{
+		{"passing and mergeable", CheckPassing, Mergeable, false},
+		{"no checks and mergeable", CheckNone, Mergeable, false},
+		{"pending and mergeable", CheckPending, Mergeable, false},
+		{"failing and mergeable", CheckFailing, Mergeable, true},
+		{"passing but conflicting", CheckPassing, Conflicting, true},
+		{"pending and conflicting", CheckPending, Conflicting, true},
+		{"failing and conflicting", CheckFailing, Conflicting, true},
+		{"passing but unknown", CheckPassing, Unknown, false},
+		{"failing and unknown", CheckFailing, Unknown, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pr := PullRequest{Checks: tt.checks, Mergeable: tt.mergeable}
+			if got := pr.NeedsRebase(); got != tt.want {
+				t.Errorf("NeedsRebase(%v, %q) = %v, want %v", tt.checks, tt.mergeable, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsDependabot(t *testing.T) {
 	tests := []struct {
 		name        string

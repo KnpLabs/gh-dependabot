@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
 	"github.com/spf13/cobra"
 )
@@ -42,6 +43,7 @@ The merge method can be configured with the --method flag (merge, rebase, squash
 		}
 
 		return runOnEligiblePRs(cmd, client, numbers, bulkAction{
+			selects:  dependabot.PullRequest.Eligible,
 			verb:     "merge",
 			progress: "Merging",
 			done:     "merged",

@@ -4,7 +4,7 @@ This file provides guidance to coding agents when working with code in this repo
 
 ## What this is
 
-A GitHub CLI extension (`gh dependabot`) written in Go to list, approve, merge and interactively review Dependabot pull requests on the repository in the current working directory.
+A GitHub CLI extension (`gh dependabot`) written in Go to list, approve, merge, rebase and interactively review Dependabot pull requests on the repository in the current working directory.
 
 ## Commands
 
@@ -26,7 +26,7 @@ Tests are table-driven, stdlib `testing` only, next to the code (`cmd/*_test.go`
 
 Commands are tested through a fake `github.Client` (`cmd/harness_test.go`): `newFakeClient` swaps the `newClient` package variable from `root.go` and records every call, and `runCommand` captures stdout/stderr and resets flags between runs. Commands must therefore get GitHub access only through `newClient()` and write only through `cmd.OutOrStdout()` / `cmd.ErrOrStderr()`, never `fmt.Print*` / `os.Stdout`. The `interactive` TUI is tested without a terminal (`cmd/interactive_model_test.go`): `tuiDriver` feeds messages to `Update`, runs the returned `tea.Cmd`s synchronously against the fake client (expanding `tea.BatchMsg`, dropping spinner ticks, recording `tea.QuitMsg`), and `keyPress` builds `tea.KeyPressMsg` values directly. Hold the messages returned by `press` instead of `settle`-ing them to simulate requests still in flight. Don't use `teatest`. The summary is snapshotted in `cmd/testdata/golden/summary/*.txt` (`go test ./cmd -update`).
 
-To try a change, `make build` then run the binary from inside a repo that has open Dependabot PRs: `/path/to/gh-dependabot/gh-dependabot [interactive|approve|merge]`. It relies on an authenticated `gh` and infers the repo from the cwd, so there is no need to `gh extension install .` between rebuilds.
+To try a change, `make build` then run the binary from inside a repo that has open Dependabot PRs: `/path/to/gh-dependabot/gh-dependabot [interactive|approve|merge|rebase]`. It relies on an authenticated `gh` and infers the repo from the cwd, so there is no need to `gh extension install .` between rebuilds.
 
 Releases are cut by pushing a `v*` tag; `.github/workflows/release.yml` uses `cli/gh-extension-precompile` to build binaries with the Go version from `go.mod`.
 
@@ -37,7 +37,7 @@ Releases are cut by pushing a `v*` tag; `.github/workflows/release.yml` uses `cl
 `internal/dependabot/` is the pure domain (no I/O): `PullRequest`, `CheckState`, `Mergeability`, eligibility rules and `MergeMethod` parsing/validation. Business rules live there and must never depend on display strings; `checksStatus` / `mergeableStatus` in `cmd/list.go` only render them.
 
 Key conventions:
-- `approve` and `merge` share their plumbing in `cmd/bulk.go`: `parsePRNumbers`, `resolveMergeMethod` (parse + check against the repo's allowed methods, also used by `interactive --merge`) and `runOnEligiblePRs`, the list → filter → act loop driven by a `bulkAction`.
+- `approve`, `merge` and `rebase` share their plumbing in `cmd/bulk.go`: `parsePRNumbers`, `resolveMergeMethod` (parse + check against the repo's allowed methods, also used by `interactive --merge`) and `runOnEligiblePRs`, the list → filter → act loop driven by a `bulkAction` whose `selects` picks the PRs (`PullRequest.Eligible` for approve/merge, `PullRequest.NeedsRebase` — conflicting or failing checks — for rebase).
 - All GitHub I/O lives behind the `github.Client` interface (`internal/github`). Reads go through the GraphQL client, mutations shell out to `gh pr ...` through the injected `exec`, and every `gh` call goes through `run()`, which turns stderr into the error message. `Merge` returns an error wrapping `github.ErrConflict` when the PR conflicts, and callers decide whether to `RequestRebase`.
 - PRs are fetched by a single query, `ListOpenDependabotPRs` (`internal/github/pullrequests.go`), shared by every command.
 - A PR counts as Dependabot's if the author is `dependabot[bot]` / `app/dependabot` / `dependabot` **or** the head branch starts with `dependabot/`.
