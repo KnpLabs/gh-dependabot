@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/spf13/cobra"
 )
 
@@ -22,6 +23,7 @@ pull request numbers to target specific PRs, otherwise all matching PRs are targ
 		}
 
 		return runOnEligiblePRs(cmd, client, numbers, bulkAction{
+			selects:  dependabot.PullRequest.Eligible,
 			verb:     "approve",
 			progress: "Approving",
 			done:     "approved",

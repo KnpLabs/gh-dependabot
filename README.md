@@ -39,6 +39,12 @@ You can merge Dependabot's PR:
 gh dependabot merge [PR's number...]
 ```
 
+You can ask Dependabot to rebase its PRs that have conflicts or failing checks:
+
+```bash
+gh dependabot rebase [PR's number...]
+```
+
 You can interactively review Dependabot's PRs one by one, with the diff displayed and a `y`/`n` prompt for each:
 
 ```bash
@@ -95,5 +101,5 @@ and infers the current repository from your working directory.
    /path/to/gh-dependabot/gh-dependabot interactive
    ```
 
-   Replace `interactive` with `approve`, `merge`, or omit it to launch the
+   Replace `interactive` with `approve`, `merge`, `rebase`, or omit it to launch the
    default list view. Rebuild and re-run after each change.

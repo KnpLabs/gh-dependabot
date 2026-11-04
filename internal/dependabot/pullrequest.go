@@ -69,6 +69,10 @@ func (pr PullRequest) Eligible() bool {
 	return pr.Checks.Passed() && pr.Mergeable == Mergeable
 }
 
+func (pr PullRequest) NeedsRebase() bool {
+	return pr.Mergeable == Conflicting || pr.Checks == CheckFailing
+}
+
 func FilterByNumbers(prs []PullRequest, numbers []int) []PullRequest {
 	numSet := make(map[int]bool)
 	for _, n := range numbers {
