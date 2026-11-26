@@ -74,20 +74,31 @@ Wants more feature? Open an issue, I'll take a look as soon as I can!
 
 ## Review with a coding agent
 
-Use a build that exposes `list` and `view` in `gh dependabot --help`. From the
-gh-dependabot checkout, link the versioned skill into your agent's skills
-directory.
+Use GitHub CLI 2.106.0 or later and a gh-dependabot release that includes the
+skill and exposes `list` and `view` in `gh dependabot --help`. Install the skill
+at user scope to use it across repositories.
 
 ### Codex
 
 ```bash
-mkdir -p "$HOME/.agents/skills" && ln -s "$(pwd -P)/skills/dependabot-review" "$HOME/.agents/skills/"
+gh skill install KnpLabs/gh-dependabot dependabot-review --agent codex --scope user
 ```
 
 ### Claude Code
 
 ```bash
-mkdir -p "$HOME/.claude/skills" && ln -s "$(pwd -P)/skills/dependabot-review" "$HOME/.claude/skills/"
+gh skill install KnpLabs/gh-dependabot dependabot-review --agent claude-code --scope user
+```
+
+For another supported agent, replace the `--agent` value with an ID listed in
+`gh skill install --help`.
+
+When a new gh-dependabot release is available, update the extension and the
+installed skill.
+
+```bash
+gh extension upgrade gh-dependabot
+gh skill update dependabot-review
 ```
 
 Start an agent session in the repository you want to review and use a request like this.
