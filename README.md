@@ -55,6 +55,14 @@ gh dependabot interactive
 
 Wants more feature? Open an issue, I'll take a look as soon as I can!
 
+## Contributing with Ship / Show / Ask
+
+Choose how to land each change on `develop`:
+
+- **Ship** — For a small, familiar change, run `make check` and push signed commits directly to `develop`.
+- **Show** — Open a PR, check the `show` box, and add the `show` label. Merge once CI passes and welcome feedback afterward.
+- **Ask** — Open a PR, check the `ask` box, and add the `ask` label. Request a review and wait for feedback before merging.
+
 ## Building from source
 
 1. Clone the repository:

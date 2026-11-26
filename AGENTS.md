@@ -6,6 +6,10 @@ This file provides guidance to coding agents when working with code in this repo
 
 A GitHub CLI extension (`gh dependabot`) written in Go to list, approve, merge, rebase and interactively review Dependabot pull requests on the repository in the current working directory.
 
+## Ship / Show / Ask
+
+When publishing a change or opening a PR, follow the [Ship / Show / Ask convention in the README](README.md#contributing-with-ship--show--ask). For a PR, check one box in the template and apply the matching GitHub label.
+
 ## Commands
 
 Prefer the `Makefile` targets over calling `go` directly (run `make` to list them):
