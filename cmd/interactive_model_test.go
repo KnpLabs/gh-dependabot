@@ -205,7 +205,7 @@ func TestInteractiveDiffFiles(t *testing.T) {
 			}
 		}
 	}
-	assertView("File 1/2  go.mod", " 9 10 │   require (", "10    │ -     example.org/lib v1.0.0", "   11 │ +     example.org/lib v1.1.0", "30 31 │   )", "[ ]=change file")
+	assertView("File 1/2  go.mod", " 9 10 │   require (", "10    │ -     example.org/lib v1.0.0", "   11 │ +     example.org/lib v1.1.0", "30 31 │   )", "[ ]  Change file", "Enter / y  Approve")
 	d.settle(d.press("[")...)
 	assertView("File 1/2  go.mod")
 
@@ -233,12 +233,12 @@ func TestInteractiveDiffFiles(t *testing.T) {
 	if !loading.AltScreen || !strings.HasPrefix(loading.Content, previousBody+"\n") {
 		t.Error("the previous diff should stay visible while the next one loads")
 	}
-	if strings.Count(loading.Content, "\n") != strings.Count(previous, "\n") || strings.Contains(loading.Content, "Approve?") {
+	if strings.Count(loading.Content, "\n") != strings.Count(previous, "\n") || strings.Contains(ansi.Strip(loading.Content), "Enter / y  Approve") {
 		t.Error("the loading footer should replace the approval prompt and retain its height")
 	}
 	d.settle(d.press("y")...)
 	d.settle(nextDiff...)
-	assertView("File 1/1  go.mod", "+ go 1.5")
+	assertView("File 1/1  go.mod", "+ go 1.5", "Enter / n  Skip")
 	client.assertCalls(t, []string{"ListOpenDependabotPRs", "Diff 1", "Diff 5"})
 }
 
@@ -275,7 +275,7 @@ func TestInteractiveSplitLayout(t *testing.T) {
 		}
 	}
 	d.settle(d.send(tea.WindowSizeMsg{Width: 132, Height: 20})...)
-	assertView(132, "Files  1/2", "▎M go.mod", "M go.sum", "+3 -2", "v=split/unified")
+	assertView(132, "Files  1/2", "▎M go.mod", "M go.sum", "+3 -2", "v  Switch view")
 	assertPaired("9   require (", "10   require (")
 	assertPaired("example.org/lib v1.0.0", "example.org/lib v1.1.0")
 
