@@ -34,7 +34,7 @@ var viewCmd = &cobra.Command{
 			return err
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Title: %s\n\n%s\n\nChecks: %s\n\n%s",
-			diffText(ansi.Strip(details.PullRequest.Title)), plainReviewText(details.Body), ansi.Strip(checksStatus(details.PullRequest.Checks, false)), plainReviewText(diff))
+			plainPRTitle(details.PullRequest.Title), plainReviewText(details.Body), checkLabel(details.PullRequest.Checks).text, plainReviewText(diff))
 		return err
 	},
 }

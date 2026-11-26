@@ -216,3 +216,32 @@ func TestOpenDependabotPR(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenDependabotPRPaginatesChecks(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{name: "includes a failing check on the next page", status: http.StatusOK},
+		{name: "returns an error for an incomplete rollup", status: http.StatusBadGateway},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &fakeTransport{
+				fixtures: []string{"pull_request_checks_first_page.json", "pull_request_checks_next_page.json"},
+				statuses: []int{http.StatusOK, tt.status},
+			}
+			got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+			if tt.status != http.StatusOK {
+				if err == nil || !strings.Contains(err.Error(), "failed to query checks for PR #42") || got != (PullRequestDetails{}) {
+					t.Fatalf("OpenDependabotPR(42) = %+v, %v; want no details and a check error", got, err)
+				}
+				return
+			}
+			if err != nil || got.PullRequest.Checks != dependabot.CheckFailing {
+				t.Fatalf("OpenDependabotPR(42) = %+v, %v; want failing checks", got, err)
+			}
+			assertRequestsMatchGolden(t, transport, "dependabot_checks_pagination")
+		})
+	}
+}

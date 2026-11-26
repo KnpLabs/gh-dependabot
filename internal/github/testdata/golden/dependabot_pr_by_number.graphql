@@ -16,16 +16,19 @@ fragment DependabotPRFields on PullRequest {
 	commits(last: 1) {
 		nodes {
 			commit {
+				id
 				statusCheckRollup {
-					contexts(first: 100) {
-						nodes {
-							... on CheckRun { conclusion }
-							... on StatusContext { state }
-						}
-					}
+					contexts(first: 100) { ...CheckContextFields }
 				}
 			}
 		}
+	}
+}
+fragment CheckContextFields on StatusCheckRollupContextConnection {
+	pageInfo { hasNextPage endCursor }
+	nodes {
+		... on CheckRun { conclusion }
+		... on StatusContext { state }
 	}
 }
 
