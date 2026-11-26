@@ -301,7 +301,7 @@ func TestDiff(t *testing.T) {
 			if diff != tt.wantDiff {
 				t.Errorf("Diff() = %q, want %q", diff, tt.wantDiff)
 			}
-			assertCalls(t, exec.calls, [][]string{{"pr", "diff", "5", "--color=never"}})
+			assertCalls(t, exec.calls, [][]string{{"pr", "diff", "5", "--color=never", "--repo", "github.com/knplabs/fake-repo"}})
 		})
 	}
 }

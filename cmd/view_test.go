@@ -14,9 +14,9 @@ func TestViewCommand(t *testing.T) {
 		client := newFakeClient(t)
 		client.view = github.PullRequestDetails{
 			PullRequest: dependabot.PullRequest{Number: 41, Title: "Bump example", Checks: dependabot.CheckPassing},
-			Body:        "Full body line one.\n\nFull body line two.",
+			Body:        "Full body line one.\r\n\r\n\x1b[31mFull body line two.\x1b[0m",
 		}
-		client.diffs = map[int]string{41: "diff --git a/go.mod b/go.mod\n+go 1.2\n"}
+		client.diffs = map[int]string{41: "diff --git a/go.mod b/go.mod\n+go \x1b[31m1.2\x1b[0m\n"}
 
 		got := runCommand(t, "view", "41")
 

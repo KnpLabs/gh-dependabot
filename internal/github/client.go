@@ -43,13 +43,13 @@ func New(exec Exec, graphql *api.GraphQLClient, repo repository.Repository) Clie
 }
 
 func Default() (Client, error) {
-	graphql, err := api.DefaultGraphQLClient()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
-	}
 	repo, err := repository.Current()
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine current repository: %w", err)
+	}
+	graphql, err := api.NewGraphQLClient(api.ClientOptions{Host: repo.Host})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GraphQL client: %w", err)
 	}
 	return New(gh.Exec, graphql, repo), nil
 }
@@ -85,7 +85,8 @@ func (c *client) RequestRebase(number int) error {
 }
 
 func (c *client) Diff(number int) (string, error) {
-	return c.run("pr", "diff", strconv.Itoa(number), "--color=never")
+	repo := c.repo.Host + "/" + c.repo.Owner + "/" + c.repo.Name
+	return c.run("pr", "diff", strconv.Itoa(number), "--color=never", "--repo", repo)
 }
 
 func (c *client) run(args ...string) (string, error) {

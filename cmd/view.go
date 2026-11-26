@@ -2,6 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+	"unicode"
+
 	"github.com/charmbracelet/x/ansi"
 	"github.com/spf13/cobra"
 )
@@ -31,9 +34,19 @@ var viewCmd = &cobra.Command{
 			return err
 		}
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Title: %s\n\n%s\n\nChecks: %s\n\n%s",
-			diffText(ansi.Strip(details.PullRequest.Title)), details.Body, ansi.Strip(checksStatus(details.PullRequest.Checks, false)), diff)
+			diffText(ansi.Strip(details.PullRequest.Title)), plainReviewText(details.Body), ansi.Strip(checksStatus(details.PullRequest.Checks, false)), plainReviewText(diff))
 		return err
 	},
+}
+
+func plainReviewText(text string) string {
+	text = strings.ReplaceAll(ansi.Strip(text), "\r\n", "\n")
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return '�'
+		}
+		return r
+	}, text)
 }
 
 func init() {
