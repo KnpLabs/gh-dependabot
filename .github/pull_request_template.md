@@ -1,7 +1,9 @@
 <!-- Ship goes directly to develop with signed commits. For a PR, choose Show or Ask. -->
 
-- [ ] **Show** — Merge once CI passes. Feedback is welcome after merging.
-- [ ] **Ask** — Request a review and wait for feedback before merging.
+Choose one in **Labels**:
+
+- `show` — Merge once CI passes. Feedback is welcome after merging.
+- `ask` — Request a review and wait for feedback before merging.
 
 ## Summary
 
