@@ -33,8 +33,9 @@ var viewCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Title: %s\n\n%s\n\nChecks: %s\n\n%s",
-			plainPRTitle(details.PullRequest.Title), plainReviewText(details.Body), checkLabel(details.PullRequest.Checks).text, plainReviewText(diff))
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Title: %s\n\n%s\n\nChecks: %s\nMergeable: %s\n\n%s",
+			plainPRTitle(details.PullRequest.Title), plainReviewText(details.Body),
+			checkLabel(details.PullRequest.Checks).text, mergeabilityLabel(details.PullRequest.Mergeable).text, plainReviewText(diff))
 		return err
 	},
 }
