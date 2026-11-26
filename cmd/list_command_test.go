@@ -3,33 +3,47 @@ package cmd
 import (
 	"errors"
 	"testing"
+
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
 
 func TestListCommand(t *testing.T) {
-	t.Run("prints one plain tab-separated row per pull request", func(t *testing.T) {
-		client := newFakeClient(t)
-
-		got := runCommand(t, "list")
-
-		assertOutput(t, got,
-			"1\tBump bubbles\t✓ passing\t✓ yes\n"+
-				"3\tBump checkout\t● pending\t✗ conflict\n"+
-				"4\tBump cobra\tnone\t✓ yes\n"+
+	tests := []struct {
+		name string
+		prs  []dependabot.PullRequest
+		want string
+	}{
+		{
+			name: "prints one plain tab-separated row per pull request",
+			prs:  openPullRequests,
+			want: "1\tBump bubbles\t✓ passing\t✓ yes\n" +
+				"3\tBump checkout\t● pending\t✗ conflict\n" +
+				"4\tBump cobra\tnone\t✓ yes\n" +
 				"5\tBump x/sys\t✗ failing\t✓ yes\n",
-			"",
-		)
-		client.assertCalls(t, []string{"ListOpenDependabotPRs"})
-	})
+		},
+		{
+			name: "prints nothing when there are no pull requests",
+		},
+		{
+			name: "sanitizes title controls to preserve one plain row",
+			prs: []dependabot.PullRequest{
+				{Number: 1, Title: "Bump\tfoo\n\x1b[31mred\x00", Checks: dependabot.CheckPassing, Mergeable: dependabot.Mergeable},
+			},
+			want: "1\tBump    foo�red�\t✓ passing\t✓ yes\n",
+		},
+	}
 
-	t.Run("prints nothing when there are no pull requests", func(t *testing.T) {
-		client := newFakeClient(t)
-		client.prs = nil
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newFakeClient(t)
+			client.prs = tt.prs
 
-		got := runCommand(t, "list")
+			got := runCommand(t, "list")
 
-		assertOutput(t, got, "", "")
-		client.assertCalls(t, []string{"ListOpenDependabotPRs"})
-	})
+			assertOutput(t, got, tt.want, "")
+			client.assertCalls(t, []string{"ListOpenDependabotPRs"})
+		})
+	}
 
 	t.Run("returns a listing error without output", func(t *testing.T) {
 		client := newFakeClient(t)
@@ -47,24 +61,14 @@ func TestListCommand(t *testing.T) {
 		client.assertCalls(t, []string{"ListOpenDependabotPRs"})
 	})
 
-	t.Run("sanitizes title controls to preserve one plain row", func(t *testing.T) {
-		client := newFakeClient(t)
-		client.prs = client.prs[:1]
-		client.prs[0].Title = "Bump\tfoo\n\x1b[31mred\x00"
-
-		got := runCommand(t, "list")
-
-		assertOutput(t, got, "1\tBump    foo�red�\t✓ passing\t✓ yes\n", "")
-		client.assertCalls(t, []string{"ListOpenDependabotPRs"})
-	})
-
 	t.Run("rejects arguments", func(t *testing.T) {
-		newFakeClient(t)
+		client := newFakeClient(t)
 
 		got := runCommand(t, "list", "1")
 
 		if got.err == nil {
 			t.Fatal("expected an argument error")
 		}
+		client.assertCalls(t, nil)
 	})
 }
