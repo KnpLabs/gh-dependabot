@@ -28,27 +28,39 @@ func (m interactiveModel) View() tea.View {
 		return tea.NewView("Done.\n")
 	}
 
-	var body string
-	if m.loadingDiff {
-		body = fmt.Sprintf("\n%s Loading diff...\n", m.spinner.View())
-	} else {
-		body = m.viewport.View()
-		if len(m.files) > 0 {
-			heading := fmt.Sprintf("File %d/%d  %s", m.fileIndex+1, len(m.files), diffName(m.files[m.fileIndex]))
-			body = lipgloss.NewStyle().Bold(true).MaxWidth(m.viewport.Width()).Render(heading) + "\n" + body
-		}
+	if m.loadingDiff && m.index == 0 {
+		return tea.NewView(fmt.Sprintf("%s Loading diff for PR #%d...", m.spinner.View(), m.prs[0].Number))
 	}
 
-	v := tea.NewView(fmt.Sprintf("%s\n%s", body, m.bottomBlock()))
+	v := tea.NewView(fmt.Sprintf("%s\n%s", m.diffView(), m.bottomBlock()))
 	v.AltScreen = true
 	return v
+}
+
+func (m interactiveModel) diffView() string {
+	content := m.viewport.View()
+	if len(m.files) == 0 {
+		return content
+	}
+	file := m.files[m.fileIndex]
+	width := m.viewport.Width()
+	if side := m.sidebarWidth(); side > 0 {
+		heading := m.diffBar(" "+diffName(file), diffTotals(file), width)
+		return lipgloss.JoinHorizontal(lipgloss.Top, m.fileList(side), heading+"\n"+content)
+	}
+	heading := fmt.Sprintf("File %d/%d  %s", m.fileIndex+1, len(m.files), diffName(file))
+	return lipgloss.NewStyle().Bold(true).MaxWidth(width).Render(heading) + "\n" + content
 }
 
 func (m interactiveModel) bottomBlock() string {
 	if len(m.prs) == 0 || m.index >= len(m.prs) {
 		return ""
 	}
-	pr := m.prs[m.index]
+	index := m.index
+	if m.loadingDiff && index > 0 {
+		index--
+	}
+	pr := m.prs[index]
 
 	sepWidth := m.width
 	if sepWidth < 1 {
@@ -56,7 +68,7 @@ func (m interactiveModel) bottomBlock() string {
 	}
 	separator := strings.Repeat("─", sepWidth)
 
-	prefix := fmt.Sprintf("PR %d of %d — #%d  ", m.index+1, len(m.prs), pr.Number)
+	prefix := fmt.Sprintf("PR %d of %d — #%d  ", index+1, len(m.prs), pr.Number)
 	prefixCols := utf8.RuneCountInString(prefix)
 	titleWidth := sepWidth - prefixCols
 	if titleWidth < 20 {
@@ -93,12 +105,20 @@ func (m interactiveModel) bottomBlock() string {
 	if len(m.files) > 1 {
 		footer += "  [ ]=change file"
 	}
+	if m.sidebarWidth() > 0 {
+		footer += "  v=split/unified"
+	}
 	if m.pending > 0 {
 		footer = fmt.Sprintf("%s %s [%d in-flight]", m.spinner.View(), footer, m.pending)
 	}
-	footer = strings.Join(wrapWords(footer, sepWidth), "\n")
+	footerLines := wrapWords(footer, sepWidth)
+	if m.loadingDiff {
+		loading := fmt.Sprintf("%s Loading diff for PR #%d... (q=quit)", m.spinner.View(), m.prs[m.index].Number)
+		loadingLines := wrapWords(loading, sepWidth)
+		footerLines = append(loadingLines, make([]string, max(0, len(footerLines)-len(loadingLines)))...)
+	}
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", separator, titleBlock.String(), status, footer)
+	return fmt.Sprintf("%s\n%s\n%s\n%s", separator, titleBlock.String(), status, strings.Join(footerLines, "\n"))
 }
 
 func (m *interactiveModel) resizeViewport() {
@@ -113,7 +133,11 @@ func (m *interactiveModel) resizeViewport() {
 	if len(m.files) > 0 {
 		bottomLines++
 	}
-	m.viewport.SetWidth(m.width)
+	width := m.width
+	if side := m.sidebarWidth(); side > 0 {
+		width -= side + 1
+	}
+	m.viewport.SetWidth(width)
 	m.viewport.SetHeight(maxInt(m.height-bottomLines, 3))
 }
 

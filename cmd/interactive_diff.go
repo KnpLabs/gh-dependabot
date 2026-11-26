@@ -8,6 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/bluekeyes/go-gitdiff/gitdiff"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func diffLines(file *gitdiff.File) []string {
@@ -89,4 +90,8 @@ func diffText(s string) string {
 		}
 		return r
 	}, s)
+}
+
+func diffStyled(style ansi.Style, text string) string {
+	return style.Styled(strings.ReplaceAll(text, ansi.ResetStyle, ansi.ResetStyle+style.String()))
 }
