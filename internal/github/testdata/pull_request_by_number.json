@@ -9,6 +9,7 @@
         "headRefName": "dependabot/npm_and_yarn/example-1.1",
         "author": {"login": "dependabot[bot]"},
         "mergeable": "MERGEABLE",
+        "labels": { "nodes": [{ "name": "dependencies" }, { "name": "status: Do_Not_Merge" }] },
         "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
           {"state": "PENDING"}
         ]}}}}]}

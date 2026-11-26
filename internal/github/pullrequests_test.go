@@ -208,7 +208,8 @@ func TestOpenDependabotPR(t *testing.T) {
 					HeadRefName: "dependabot/npm_and_yarn/example-1.1", Checks: dependabot.CheckPending,
 					Mergeable: dependabot.Mergeable,
 				},
-				Body: "Bumps example from 1.0 to 1.1.\n\nRelease notes: full body.",
+				Labels: []string{"dependencies", "status: Do_Not_Merge"},
+				Body:   "Bumps example from 1.0 to 1.1.\n\nRelease notes: full body.",
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("OpenDependabotPR(42) =\n%+v\nwant\n%+v", got, want)
@@ -233,7 +234,7 @@ func TestOpenDependabotPRPaginatesChecks(t *testing.T) {
 			}
 			got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
 			if tt.status != http.StatusOK {
-				if err == nil || !strings.Contains(err.Error(), "failed to query checks for PR #42") || got != (PullRequestDetails{}) {
+				if err == nil || !strings.Contains(err.Error(), "failed to query checks for PR #42") || !reflect.DeepEqual(got, PullRequestDetails{}) {
 					t.Fatalf("OpenDependabotPR(42) = %+v, %v; want no details and a check error", got, err)
 				}
 				return
@@ -243,5 +244,63 @@ func TestOpenDependabotPRPaginatesChecks(t *testing.T) {
 			}
 			assertRequestsMatchGolden(t, transport, "dependabot_checks_pagination")
 		})
+	}
+}
+
+func TestOpenDependabotPRPaginatesLabels(t *testing.T) {
+	transport := &fakeTransport{fixtures: []string{
+		"pull_request_labels_page_1.json",
+		"pull_request_labels_page_2.json",
+	}}
+	got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+	if err != nil {
+		t.Fatalf("OpenDependabotPR(42) error: %v", err)
+	}
+	want := []string{"dependencies", "team review", "hold"}
+	if !reflect.DeepEqual(got.Labels, want) {
+		t.Errorf("OpenDependabotPR(42).Labels = %v, want %v", got.Labels, want)
+	}
+	if len(transport.requests) != 2 {
+		t.Fatalf("request count = %d, want 2", len(transport.requests))
+	}
+	if got := transport.requests[1].Variables["after"]; got != "labels-next" {
+		t.Errorf("second request after = %v, want labels-next", got)
+	}
+	assertRequestsMatchGolden(t, transport, "dependabot_labels_pagination")
+}
+
+func TestOpenDependabotPRReturnsErrorForInvalidLabelCursor(t *testing.T) {
+	transport := &fakeTransport{fixture: "pull_request_labels_missing_cursor.json"}
+	got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+	if err == nil || !strings.Contains(err.Error(), "failed to query labels for PR #42: invalid pagination data") {
+		t.Fatalf("OpenDependabotPR(42) = %+v, %v; want invalid labels pagination error", got, err)
+	}
+	if len(transport.requests) != 1 {
+		t.Errorf("request count = %d, want 1", len(transport.requests))
+	}
+}
+
+func TestOpenDependabotPRReturnsErrorForRepeatedLabelCursor(t *testing.T) {
+	transport := &fakeTransport{fixtures: []string{
+		"pull_request_labels_page_1.json",
+		"pull_request_labels_repeated_cursor.json",
+	}}
+	got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+	if err == nil || !strings.Contains(err.Error(), "failed to query labels for PR #42: invalid pagination data") {
+		t.Fatalf("OpenDependabotPR(42) = %+v, %v; want invalid labels pagination error", got, err)
+	}
+	if len(transport.requests) != 2 {
+		t.Errorf("request count = %d, want 2", len(transport.requests))
+	}
+}
+
+func TestOpenDependabotPRReturnsErrorWhenLaterLabelPageIsUnavailable(t *testing.T) {
+	transport := &fakeTransport{fixtures: []string{
+		"pull_request_labels_page_1.json",
+		"pull_request_labels_null.json",
+	}}
+	got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+	if err == nil || !strings.Contains(err.Error(), "failed to query labels for PR #42: labels unavailable") {
+		t.Fatalf("OpenDependabotPR(42) = %+v, %v; want unavailable labels error", got, err)
 	}
 }

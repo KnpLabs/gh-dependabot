@@ -1,0 +1,1 @@
+../../../skills/gh-dependanbot/SKILL.md

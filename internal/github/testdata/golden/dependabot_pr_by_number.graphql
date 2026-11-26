@@ -4,6 +4,7 @@ query DependabotPRByNumber($owner: String!, $name: String!, $number: Int!) {
 			bodyText
 			state
 			...DependabotPRFields
+			labels(first: 100) { pageInfo { hasNextPage endCursor } nodes { name } }
 		}
 	}
 }

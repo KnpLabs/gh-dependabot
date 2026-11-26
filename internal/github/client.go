@@ -28,6 +28,7 @@ type Client interface {
 type PullRequestDetails struct {
 	PullRequest dependabot.PullRequest
 	Body        string
+	Labels      []string
 }
 
 type Exec func(args ...string) (stdout, stderr bytes.Buffer, err error)

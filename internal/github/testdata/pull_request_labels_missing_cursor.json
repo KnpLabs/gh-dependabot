@@ -1,0 +1,21 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "number": 42,
+        "title": "Bump example",
+        "bodyText": "Full body",
+        "state": "OPEN",
+        "author": {"login": "dependabot[bot]"},
+        "mergeable": "MERGEABLE",
+        "labels": {
+          "nodes": [{"name": "dependencies"}],
+          "pageInfo": {"hasNextPage": true, "endCursor": ""}
+        },
+        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {
+          "nodes": [{"conclusion": "SUCCESS"}]
+        }}}}]}
+      }
+    }
+  }
+}

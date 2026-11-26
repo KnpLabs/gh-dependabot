@@ -59,9 +59,18 @@ const dependabotPRByNumberQuery = `query DependabotPRByNumber($owner: String!, $
 			bodyText
 			state
 			...DependabotPRFields
+			labels(first: 100) { pageInfo { hasNextPage endCursor } nodes { name } }
 		}
 	}
 }` + "\n" + dependabotPRFields + "\n" + checkContextFields
+
+const dependabotPRLabelsQuery = `query DependabotPRLabels($owner: String!, $name: String!, $number: Int!, $after: String!) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $number) {
+			labels(first: 100, after: $after) { pageInfo { hasNextPage endCursor } nodes { name } }
+		}
+	}
+}`
 
 type pullRequestNode struct {
 	Number      int    `json:"number"`
@@ -72,7 +81,8 @@ type pullRequestNode struct {
 	Author      struct {
 		Login string `json:"login"`
 	} `json:"author"`
-	Mergeable string `json:"mergeable"`
+	Mergeable string     `json:"mergeable"`
+	Labels    *labelPage `json:"labels"`
 	Commits   struct {
 		Nodes []struct {
 			Commit checkCommit `json:"commit"`
@@ -83,6 +93,13 @@ type pullRequestNode struct {
 type pageInfo struct {
 	HasNextPage bool   `json:"hasNextPage"`
 	EndCursor   string `json:"endCursor"`
+}
+
+type labelPage struct {
+	PageInfo pageInfo `json:"pageInfo"`
+	Nodes    []struct {
+		Name string `json:"name"`
+	} `json:"nodes"`
 }
 
 type checkContextPage struct {
@@ -124,12 +141,63 @@ func (c *client) OpenDependabotPR(number int) (PullRequestDetails, error) {
 	if !pr.IsDependabot() {
 		return PullRequestDetails{}, fmt.Errorf("pull request #%d is not a Dependabot pull request", number)
 	}
+	if node.Labels == nil {
+		return PullRequestDetails{}, fmt.Errorf("failed to query labels for PR #%d: labels unavailable", number)
+	}
 	checks, err := c.checkState(*node)
 	if err != nil {
 		return PullRequestDetails{}, err
 	}
 	pr.Checks = checks
-	return PullRequestDetails{PullRequest: pr, Body: node.Body}, nil
+	labels := make([]string, 0, len(node.Labels.Nodes))
+	for _, label := range node.Labels.Nodes {
+		labels = append(labels, label.Name)
+	}
+	remainingLabels, err := c.remainingLabels(number, variables, *node.Labels)
+	if err != nil {
+		return PullRequestDetails{}, err
+	}
+	labels = append(labels, remainingLabels...)
+	return PullRequestDetails{PullRequest: pr, Body: node.Body, Labels: labels}, nil
+}
+
+func (c *client) remainingLabels(number int, variables map[string]any, page labelPage) ([]string, error) {
+	var labels []string
+	seenCursors := map[string]bool{}
+	for page.PageInfo.HasNextPage {
+		cursor := page.PageInfo.EndCursor
+		if cursor == "" || seenCursors[cursor] {
+			return nil, fmt.Errorf("failed to query labels for PR #%d: invalid pagination data", number)
+		}
+		seenCursors[cursor] = true
+		pageVariables := map[string]any{
+			"owner":  variables["owner"],
+			"name":   variables["name"],
+			"number": number,
+			"after":  cursor,
+		}
+		var result struct {
+			Repository struct {
+				PullRequest *struct {
+					Labels *labelPage `json:"labels"`
+				} `json:"pullRequest"`
+			} `json:"repository"`
+		}
+		if err := c.graphql.Do(dependabotPRLabelsQuery, pageVariables, &result); err != nil {
+			return nil, fmt.Errorf("failed to query labels for PR #%d: %w", number, err)
+		}
+		if result.Repository.PullRequest == nil {
+			return nil, fmt.Errorf("failed to query labels for PR #%d: pull request unavailable", number)
+		}
+		if result.Repository.PullRequest.Labels == nil {
+			return nil, fmt.Errorf("failed to query labels for PR #%d: labels unavailable", number)
+		}
+		for _, label := range result.Repository.PullRequest.Labels.Nodes {
+			labels = append(labels, label.Name)
+		}
+		page = *result.Repository.PullRequest.Labels
+	}
+	return labels, nil
 }
 
 func (c *client) ListOpenDependabotPRs() ([]dependabot.PullRequest, error) {

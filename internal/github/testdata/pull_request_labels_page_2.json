@@ -1,0 +1,12 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "labels": {
+          "nodes": [{"name": "team review"}, {"name": "hold"}],
+          "pageInfo": {"hasNextPage": false, "endCursor": ""}
+        }
+      }
+    }
+  }
+}
