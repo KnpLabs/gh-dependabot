@@ -1,5 +1,5 @@
 ---
-name: gh-dependanbot
+name: gh-dependabot
 description:
   Review Dependabot pull requests with gh dependabot, assess upgrade
   compatibility, and act on the review.

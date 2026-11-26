@@ -79,7 +79,7 @@ skill and exposes `list` and `view` in `gh dependabot --help`. Install the skill
 at user scope to use it across repositories.
 
 ```bash
-gh skill install KnpLabs/gh-dependabot gh-dependanbot
+gh skill install KnpLabs/gh-dependabot gh-dependabot
 ```
 
 When a new gh-dependabot release is available, update the extension and the
@@ -87,7 +87,7 @@ installed skill.
 
 ```bash
 gh extension upgrade gh-dependabot
-gh skill update gh-dependanbot
+gh skill update gh-dependabot
 ```
 
 Start an agent session in the repository you want to review and use a request

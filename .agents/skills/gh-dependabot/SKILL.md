@@ -1,1 +1,1 @@
-../../../skills/gh-dependanbot/SKILL.md
+../../../skills/gh-dependabot/SKILL.md
