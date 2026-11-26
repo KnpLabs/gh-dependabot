@@ -3,12 +3,15 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
 )
@@ -167,12 +170,148 @@ func TestInteractiveListErrorQuits(t *testing.T) {
 }
 
 func TestInteractiveLoadsFirstDiff(t *testing.T) {
-	d := newTUIDriver(t, reviewQueue, nil)
+	client := &fakeClient{prs: reviewQueue}
+	d := &tuiDriver{t: t, model: newInteractiveModel(client), client: client}
+	if view := d.model.View(); view.AltScreen {
+		t.Fatal("opened alternate screen while loading the PR list")
+	}
+	firstDiff := d.send(fetchDependabotPRsCmd(client)())
+	if view := d.model.View(); view.AltScreen || !strings.Contains(view.Content, "Loading diff for PR #1") {
+		t.Fatalf("expected inline loading message, got %+v", view)
+	}
+	d.settle(firstDiff...)
 
-	if d.model.loadingDiff || d.model.diff != "diff of #1" {
-		t.Errorf("loadingDiff = %v, diff = %q, want the diff of #1", d.model.loadingDiff, d.model.diff)
+	if view := d.model.View(); !view.AltScreen || d.model.loadingDiff || !strings.Contains(ansi.Strip(view.Content), "+ go 1.1") {
+		t.Errorf("want the diff of #1 in the alternate screen, got:\n%s", view.Content)
 	}
 	d.client.assertCalls(t, []string{"ListOpenDependabotPRs", "Diff 1"})
+}
+
+func TestInteractiveDiffFiles(t *testing.T) {
+	patch, err := os.ReadFile("testdata/dependency.diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeClient{prs: reviewQueue, diffs: map[int]string{1: string(patch)}}
+	d := &tuiDriver{t: t, model: newInteractiveModel(client), client: client}
+	d.settle(d.run(d.model.Init())...)
+
+	assertView := func(want ...string) {
+		t.Helper()
+		view := ansi.Strip(d.model.View().Content)
+		for _, line := range want {
+			if !strings.Contains(view, line) {
+				t.Errorf("view missing %q:\n%s", line, view)
+			}
+		}
+	}
+	assertView("File 1/2  go.mod", " 9 10 │   require (", "10    │ -     example.org/lib v1.0.0", "   11 │ +     example.org/lib v1.1.0", "30 31 │   )", "[ ]  Change file", "Enter / y  Approve")
+	d.settle(d.press("[")...)
+	assertView("File 1/2  go.mod")
+
+	d.settle(d.send(tea.WindowSizeMsg{Width: 80, Height: 10})...)
+	d.model.viewport.SetYOffset(4)
+	if d.model.viewport.YOffset() == 0 {
+		t.Fatal("expected scroll offset within the first file")
+	}
+	assertView("File 1/2  go.mod")
+	d.settle(d.press("]")...)
+	assertView("File 2/2  go.sum", "1   │ - example.org/lib v1.0.0")
+	if got := d.model.viewport.YOffset(); got != 0 {
+		t.Errorf("scroll offset after changing files = %d, want 0", got)
+	}
+	d.settle(d.press("]")...)
+	assertView("File 2/2  go.sum")
+	d.settle(d.press("[")...)
+	assertView("File 1/2  go.mod")
+	d.settle(d.press("]")...)
+	previous := d.model.View().Content
+	previousBody := d.model.diffView()
+	nextDiff := d.press("n")
+	assertView("File 2/2  go.sum", "PR 1 of 2 — #1", "Loading diff for PR #5")
+	loading := d.model.View()
+	if !loading.AltScreen || !strings.HasPrefix(loading.Content, previousBody+"\n") {
+		t.Error("the previous diff should stay visible while the next one loads")
+	}
+	if strings.Count(loading.Content, "\n") != strings.Count(previous, "\n") || strings.Contains(ansi.Strip(loading.Content), "Enter / y  Approve") {
+		t.Error("the loading footer should replace the approval prompt and retain its height")
+	}
+	d.settle(d.press("y")...)
+	d.settle(nextDiff...)
+	assertView("File 1/1  go.mod", "+ go 1.5", "Enter / n  Skip")
+	client.assertCalls(t, []string{"ListOpenDependabotPRs", "Diff 1", "Diff 5"})
+}
+
+func TestInteractiveSplitLayout(t *testing.T) {
+	patch, err := os.ReadFile("testdata/dependency.diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeClient{prs: reviewQueue, diffs: map[int]string{1: string(patch)}}
+	d := &tuiDriver{t: t, model: newInteractiveModel(client), client: client}
+	d.settle(d.run(d.model.Init())...)
+
+	assertView := func(width int, want ...string) {
+		t.Helper()
+		view := ansi.Strip(d.model.View().Content)
+		for _, line := range want {
+			if !strings.Contains(view, line) {
+				t.Errorf("view missing %q:\n%s", line, view)
+			}
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if ansi.StringWidth(line) > width {
+				t.Errorf("line exceeds terminal width %d: %q", width, line)
+			}
+		}
+	}
+	assertPaired := func(before, after string) {
+		t.Helper()
+		rows := strings.Split(ansi.Strip(d.model.viewport.GetContent()), "\n")
+		if !slices.ContainsFunc(rows, func(line string) bool {
+			return strings.Contains(line, before) && strings.Contains(line, after)
+		}) {
+			t.Errorf("expected %q and %q on the same row:\n%s", before, after, strings.Join(rows, "\n"))
+		}
+	}
+	d.settle(d.send(tea.WindowSizeMsg{Width: 132, Height: 20})...)
+	assertView(132, "Files  1/2", "▎M go.mod", "M go.sum", "+3 -2", "v  Switch view")
+	assertPaired("9   require (", "10   require (")
+	assertPaired("example.org/lib v1.0.0", "example.org/lib v1.1.0")
+
+	d.settle(d.press("v")...)
+	assertView(132, "10    │ -     example.org/lib v1.0.0", "   11 │ +     example.org/lib v1.1.0")
+	d.settle(d.press("v")...)
+	d.settle(d.press("]")...)
+	assertView(132, "Files  2/2", "▎M go.sum", "+1 -1")
+	d.settle(d.send(tea.WindowSizeMsg{Width: 98, Height: 20})...)
+	assertView(98, "File 2/2  go.sum", "1   │ - example.org/lib v1.0.0")
+	d.settle(d.send(tea.WindowSizeMsg{Width: 132, Height: 20})...)
+	assertView(132, "Files  2/2", "▎M go.sum")
+	assertPaired("example.org/lib v1.0.0", "example.org/lib v1.1.0")
+	client.assertCalls(t, []string{"ListOpenDependabotPRs", "Diff 1"})
+}
+
+func TestInteractiveSplitWrapsLongLines(t *testing.T) {
+	before := strings.Repeat("旧", 48)
+	after := strings.Repeat("新", 48)
+	patch := fmt.Sprintf("diff --git a/go.sum b/go.sum\n--- a/go.sum\n+++ b/go.sum\n@@ -1 +1 @@\n-%s\n+%s\n", before, after)
+	client := &fakeClient{prs: reviewQueue, diffs: map[int]string{1: patch}}
+	d := &tuiDriver{t: t, model: newInteractiveModel(client), client: client}
+	d.settle(d.run(d.model.Init())...)
+	d.settle(d.send(tea.WindowSizeMsg{Width: 100, Height: 20})...)
+
+	content := ansi.Strip(d.model.viewport.GetContent())
+	for _, text := range []string{"旧", "新"} {
+		if got := strings.Count(content, text); got != 48 {
+			t.Errorf("expected all 48 occurrences of %s, got %d", text, got)
+		}
+	}
+	for _, row := range strings.Split(content, "\n") {
+		if ansi.StringWidth(row) > d.model.viewport.Width() {
+			t.Errorf("split row exceeds diff pane width: %q", row)
+		}
+	}
 }
 
 func TestInteractiveKeys(t *testing.T) {
@@ -340,20 +479,21 @@ func TestInteractiveQuitWaitsForInFlightRequests(t *testing.T) {
 
 func TestInteractiveIgnoresStaleDiff(t *testing.T) {
 	d := newTUIDriver(t, reviewQueue, nil)
+	previous := d.model.viewport.GetContent()
 
 	nextDiff := d.press("n")
 	if d.model.index != 1 || !d.model.loadingDiff {
 		t.Fatalf("index = %d, loadingDiff = %v, want the diff of #5 loading", d.model.index, d.model.loadingDiff)
 	}
 
-	d.settle(diffLoadedMsg{number: 1, diff: "stale diff of #1"})
-	if !d.model.loadingDiff || d.model.diff != "" {
-		t.Errorf("stale diff applied: loadingDiff = %v, diff = %q", d.model.loadingDiff, d.model.diff)
+	d.settle(d.run(fetchDiffCmd(d.client, 1))...)
+	if !d.model.loadingDiff || d.model.viewport.GetContent() != previous {
+		t.Error("a stale response should leave the previous diff and loading state intact")
 	}
 
 	d.settle(nextDiff...)
-	if d.model.loadingDiff || d.model.diff != "diff of #5" {
-		t.Errorf("loadingDiff = %v, diff = %q, want the diff of #5", d.model.loadingDiff, d.model.diff)
+	if view := ansi.Strip(d.model.View().Content); d.model.loadingDiff || !strings.Contains(view, "+ go 1.5") {
+		t.Errorf("want the diff of #5 in the view, got:\n%s", view)
 	}
 }
 
@@ -363,8 +503,8 @@ func TestInteractiveDiffError(t *testing.T) {
 	d.settle(d.press("n")...)
 	d.settle(diffLoadedMsg{number: 5, err: errors.New("could not find pull request")})
 
-	if d.model.diff != "Failed to load diff: could not find pull request" {
-		t.Errorf("diff = %q", d.model.diff)
+	if view := d.model.View().Content; !strings.Contains(view, "Failed to load diff: could not find pull request") {
+		t.Errorf("missing diff error in the view:\n%s", view)
 	}
 }
 

@@ -1,0 +1,19 @@
+diff --git a/go.mod b/go.mod
+--- a/go.mod
++++ b/go.mod
+@@ -9,3 +10,4 @@
+ require (
+-	example.org/lib v1.0.0
++	example.org/lib v1.1.0
++	example.org/extra v1.0.0
+ )
+@@ -29,2 +30,2 @@
+-	example.org/other v1.0.0
++	example.org/other v1.1.0
+ )
+diff --git a/go.sum b/go.sum
+--- a/go.sum
++++ b/go.sum
+@@ -1 +1 @@
+-example.org/lib v1.0.0
++example.org/lib v1.1.0

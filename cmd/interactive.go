@@ -14,9 +14,12 @@ var interactiveCmd = &cobra.Command{
 	Long: `Iterate over every open Dependabot pull request, display its diff, and
 prompt to approve (y) or skip (n) each one.
 
-The default action shown in the footer flips based on CI status:
-  - checks passing/pending: [Y/n] — enter approves
-  - any check failing:      [y/N] — enter skips
+Press [ or ] to change files. Wide terminals show a file list and a
+side-by-side diff. Press v to switch the diff to or from a unified view.
+
+The footer shows the default action for Enter based on CI status:
+  - no failing checks: Enter approves
+  - any check failing: Enter skips
 
 Press r to post a "@dependabot rebase" comment on the current PR and move
 on; this is independent of approve/merge and is available whatever the CI

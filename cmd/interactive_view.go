@@ -8,6 +8,9 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
 
 func (m interactiveModel) View() tea.View {
@@ -27,23 +30,39 @@ func (m interactiveModel) View() tea.View {
 		return tea.NewView("Done.\n")
 	}
 
-	var body string
-	if m.loadingDiff {
-		body = fmt.Sprintf("\n%s Loading diff...\n", m.spinner.View())
-	} else {
-		body = m.viewport.View()
+	if m.loadingDiff && m.index == 0 {
+		return tea.NewView(fmt.Sprintf("%s Loading diff for PR #%d...", m.spinner.View(), m.prs[0].Number))
 	}
 
-	v := tea.NewView(fmt.Sprintf("%s\n%s", body, m.bottomBlock()))
+	v := tea.NewView(fmt.Sprintf("%s\n%s", m.diffView(), m.bottomBlock()))
 	v.AltScreen = true
 	return v
+}
+
+func (m interactiveModel) diffView() string {
+	content := m.viewport.View()
+	if len(m.files) == 0 {
+		return content
+	}
+	file := m.files[m.fileIndex]
+	width := m.viewport.Width()
+	if side := m.sidebarWidth(); side > 0 {
+		heading := m.diffBar(" "+diffName(file), diffTotals(file), width)
+		return lipgloss.JoinHorizontal(lipgloss.Top, m.fileList(side), heading+"\n"+content)
+	}
+	heading := fmt.Sprintf("File %d/%d  %s", m.fileIndex+1, len(m.files), diffName(file))
+	return lipgloss.NewStyle().Bold(true).MaxWidth(width).Render(heading) + "\n" + content
 }
 
 func (m interactiveModel) bottomBlock() string {
 	if len(m.prs) == 0 || m.index >= len(m.prs) {
 		return ""
 	}
-	pr := m.prs[m.index]
+	index := m.index
+	if m.loadingDiff && index > 0 {
+		index--
+	}
+	pr := m.prs[index]
 
 	sepWidth := m.width
 	if sepWidth < 1 {
@@ -51,7 +70,7 @@ func (m interactiveModel) bottomBlock() string {
 	}
 	separator := strings.Repeat("─", sepWidth)
 
-	prefix := fmt.Sprintf("PR %d of %d — #%d  ", m.index+1, len(m.prs), pr.Number)
+	prefix := fmt.Sprintf("PR %d of %d — #%d  ", index+1, len(m.prs), pr.Number)
 	prefixCols := utf8.RuneCountInString(prefix)
 	titleWidth := sepWidth - prefixCols
 	if titleWidth < 20 {
@@ -72,24 +91,66 @@ func (m interactiveModel) bottomBlock() string {
 	status := fmt.Sprintf("Checks: %s   Mergeable: %s",
 		checksStatus(pr.Checks), mergeableStatus(pr.Mergeable))
 
-	actionLabel := "Approve"
-	yLegend := "y=approve"
-	if m.mergeAfterApprove {
-		actionLabel = "Approve & merge"
-		yLegend = "y=approve+merge"
-	}
-	var prompt string
-	if defaultApprove(pr) {
-		prompt = fmt.Sprintf("%s? [Y/n]", actionLabel)
-	} else {
-		prompt = fmt.Sprintf("%s? [y/N]", actionLabel)
-	}
-	footer := fmt.Sprintf("%s   (%s, r=rebase, n=skip, ↑↓=scroll, q=quit)", prompt, yLegend)
-	if m.pending > 0 {
-		footer = fmt.Sprintf("%s %s [%d in-flight]", m.spinner.View(), footer, m.pending)
+	footerLines := m.shortcutRows(pr, sepWidth)
+	if m.loadingDiff {
+		loading := fmt.Sprintf("%s Loading diff for PR #%d...", m.spinner.View(), m.prs[m.index].Number)
+		loadingLines := packShortcuts(sepWidth, loading, shortcut("q", "Quit"))
+		footerLines = append(loadingLines, make([]string, max(0, len(footerLines)-len(loadingLines)))...)
 	}
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s", separator, titleBlock.String(), status, footer)
+	return fmt.Sprintf("%s\n%s\n%s\n%s", separator, titleBlock.String(), status, strings.Join(footerLines, "\n"))
+}
+
+func (m interactiveModel) shortcutRows(pr dependabot.PullRequest, width int) []string {
+	approveKey, skipKey := "y", "n"
+	if defaultApprove(pr) {
+		approveKey = "Enter / y"
+	} else {
+		skipKey = "Enter / n"
+	}
+	approveLabel := "Approve"
+	if m.mergeAfterApprove {
+		approveLabel = "Approve & merge"
+	}
+	actions := []string{shortcut(approveKey, approveLabel), shortcut("r", "Rebase"), shortcut(skipKey, "Skip")}
+	if m.pending > 0 {
+		actions = append(actions, fmt.Sprintf("%s %d in flight", m.spinner.View(), m.pending))
+	}
+
+	navigation := []string{shortcut("↑↓", "Scroll")}
+	if len(m.files) > 1 {
+		navigation = append(navigation, shortcut("[ ]", "Change file"))
+	}
+	if m.sidebarWidth() > 0 {
+		navigation = append(navigation, shortcut("v", "Switch view"))
+	}
+	navigation = append(navigation, shortcut("q", "Quit"))
+	return append(packShortcuts(width, actions...), packShortcuts(width, navigation...)...)
+}
+
+func shortcut(key, label string) string {
+	return lipgloss.NewStyle().Bold(true).Render(key) + "  " + label
+}
+
+func packShortcuts(width int, entries ...string) []string {
+	const gap = "    "
+	var rows []string
+	var row string
+	used := 0
+	for _, entry := range entries {
+		cells := ansi.StringWidth(entry)
+		if row != "" && used+len(gap)+cells > width {
+			rows = append(rows, row)
+			row, used = "", 0
+		}
+		if row != "" {
+			row += gap
+			used += len(gap)
+		}
+		row += entry
+		used += cells
+	}
+	return append(rows, row)
 }
 
 func (m *interactiveModel) resizeViewport() {
@@ -101,7 +162,14 @@ func (m *interactiveModel) resizeViewport() {
 	if bottom != "" {
 		bottomLines = strings.Count(bottom, "\n") + 1
 	}
-	m.viewport.SetWidth(m.width)
+	if len(m.files) > 0 {
+		bottomLines++
+	}
+	width := m.width
+	if side := m.sidebarWidth(); side > 0 {
+		width -= side + 1
+	}
+	m.viewport.SetWidth(width)
 	m.viewport.SetHeight(maxInt(m.height-bottomLines, 3))
 }
 

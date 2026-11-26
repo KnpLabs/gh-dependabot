@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
 )
@@ -21,7 +22,10 @@ type interactiveModel struct {
 	rebased           []int
 	rebaseFailed      []prFailure
 	skipped           []int
-	diff              string
+	files             []*gitdiff.File
+	fileIndex         int
+	unifiedDiff       bool
+	darkBackground    bool
 	viewport          viewport.Model
 	spinner           spinner.Model
 	loadingList       bool
@@ -45,24 +49,40 @@ type prFailure struct {
 func newInteractiveModel(client github.Client) interactiveModel {
 	s := spinner.New(spinner.WithSpinner(spinner.Dot))
 	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	vp.SoftWrap = true
 	return interactiveModel{
-		client:      client,
-		spinner:     s,
-		viewport:    vp,
-		loadingList: true,
+		client:         client,
+		spinner:        s,
+		viewport:       vp,
+		loadingList:    true,
+		darkBackground: true,
 	}
 }
 
 func (m interactiveModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, fetchDependabotPRsCmd(m.client))
+	return tea.Batch(tea.RequestBackgroundColor, m.spinner.Tick, fetchDependabotPRsCmd(m.client))
 }
 
 func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		oldWidth := m.viewport.Width()
+		wasSplit := m.splitDiff()
 		m.width = msg.Width
 		m.height = msg.Height
 		m.resizeViewport()
+		if m.viewport.Width() != oldWidth || m.splitDiff() != wasSplit {
+			m.renderFile()
+		} else {
+			m.viewport.SetYOffset(m.viewport.YOffset())
+		}
+		return m, nil
+
+	case tea.BackgroundColorMsg:
+		m.darkBackground = msg.IsDark()
+		if m.splitDiff() {
+			m.renderFile()
+		}
 		return m, nil
 
 	case prsLoadedMsg:
@@ -72,7 +92,6 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done = true
 			return m, tea.Quit
 		}
-		m.resizeViewport()
 		m.loadingDiff = true
 		return m, tea.Batch(m.spinner.Tick, fetchDiffCmd(m.client, m.prs[0].Number))
 
@@ -86,12 +105,17 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loadingDiff = false
+		m.files = nil
+		m.fileIndex = 0
 		if msg.err != nil {
-			m.diff = fmt.Sprintf("Failed to load diff: %v", msg.err)
+			m.viewport.SetContent(fmt.Sprintf("Failed to load diff: %v", msg.err))
+		} else if len(msg.files) == 0 {
+			m.viewport.SetContent("No file changes in this diff.")
 		} else {
-			m.diff = msg.diff
+			m.files = msg.files
 		}
-		m.viewport.SetContent(m.diff)
+		m.resizeViewport()
+		m.renderFile()
 		m.viewport.SetYOffset(0)
 		return m, nil
 
@@ -174,6 +198,18 @@ func (m interactiveModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch key {
+	case "[":
+		m.showFile(m.fileIndex - 1)
+		return m, nil
+	case "]":
+		m.showFile(m.fileIndex + 1)
+		return m, nil
+	case "v":
+		if m.sidebarWidth() > 0 {
+			m.unifiedDiff = !m.unifiedDiff
+			m.renderFile()
+		}
+		return m, nil
 	case "y", "Y":
 		number := m.prs[m.index].Number
 		m.pending++
@@ -209,11 +245,29 @@ func (m *interactiveModel) advance() tea.Cmd {
 		}
 		return m.spinner.Tick
 	}
-	m.diff = ""
-	m.viewport.SetContent("")
-	m.resizeViewport()
 	m.loadingDiff = true
 	return tea.Batch(m.spinner.Tick, fetchDiffCmd(m.client, m.prs[m.index].Number))
+}
+
+func (m *interactiveModel) showFile(index int) {
+	if index < 0 || index >= len(m.files) {
+		return
+	}
+	m.fileIndex = index
+	m.renderFile()
+	m.viewport.SetYOffset(0)
+}
+
+func (m *interactiveModel) renderFile() {
+	if len(m.files) == 0 {
+		return
+	}
+	file := m.files[m.fileIndex]
+	if m.splitDiff() {
+		m.viewport.SetContentLines(splitDiffLines(file, m.viewport.Width(), m.darkBackground))
+	} else {
+		m.viewport.SetContentLines(diffLines(file))
+	}
 }
 
 func defaultApprove(pr dependabot.PullRequest) bool {

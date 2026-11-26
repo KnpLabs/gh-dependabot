@@ -29,6 +29,7 @@ type fakeClient struct {
 	approveErr map[int]error
 	mergeErr   map[int]error
 	rebaseErr  map[int]error
+	diffs      map[int]string
 	calls      []string
 }
 
@@ -73,7 +74,10 @@ func (f *fakeClient) RequestRebase(number int) error {
 
 func (f *fakeClient) Diff(number int) (string, error) {
 	f.calls = append(f.calls, fmt.Sprintf("Diff %d", number))
-	return fmt.Sprintf("diff of #%d", number), nil
+	if diff, ok := f.diffs[number]; ok {
+		return diff, nil
+	}
+	return fmt.Sprintf("diff --git a/go.mod b/go.mod\n--- a/go.mod\n+++ b/go.mod\n@@ -1 +1 @@\n-go 1.0\n+go 1.%d\n", number), nil
 }
 
 func (f *fakeClient) assertCalls(t *testing.T, want []string) {
