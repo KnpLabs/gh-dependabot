@@ -1,0 +1,16 @@
+query MergeApproval($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      baseRefName
+      headRefName
+      headRefOid
+      author { login }
+      latestOpinionatedReviews(first: 100, writersOnly: true) {
+        nodes {
+          state
+          commit { oid }
+        }
+      }
+    }
+  }
+}

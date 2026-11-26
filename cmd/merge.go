@@ -16,6 +16,8 @@ var mergeCmd = &cobra.Command{
 marked as passed or skipped and are mergeable. Optionally specify one or more
 pull request numbers to target specific PRs, otherwise all matching PRs are targeted.
 
+PRs targeting develop require an approval on the current head commit.
+
 The merge method can be configured with the --method flag (merge, rebase, squash).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		methodFlag, err := cmd.Flags().GetString("method")

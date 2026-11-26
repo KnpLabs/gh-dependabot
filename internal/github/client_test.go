@@ -49,6 +49,7 @@ type graphQLRequest struct {
 type fakeTransport struct {
 	t        *testing.T
 	fixture  string
+	response string
 	status   int
 	requests []graphQLRequest
 }
@@ -60,9 +61,13 @@ func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	f.requests = append(f.requests, body)
 
-	data, err := os.ReadFile(filepath.Join("testdata", f.fixture))
-	if err != nil {
-		f.t.Fatalf("reading fixture: %v", err)
+	data := []byte(f.response)
+	if f.fixture != "" {
+		var err error
+		data, err = os.ReadFile(filepath.Join("testdata", f.fixture))
+		if err != nil {
+			f.t.Fatalf("reading fixture: %v", err)
+		}
 	}
 	status := f.status
 	if status == 0 {
@@ -228,13 +233,58 @@ func TestMerge(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			exec := &fakeExec{responses: tt.responses}
 
-			err := newTestClient(t, exec, nil).Merge(7, tt.method, tt.deleteBranch)
+			transport := &fakeTransport{response: `{"data":{"repository":{"pullRequest":{"baseRefName":"main","author":{"login":"dependabot"}}}}}`}
+			err := newTestClient(t, exec, transport).Merge(7, tt.method, tt.deleteBranch)
 
 			assertErr(t, err, tt.wantErr)
 			if got := errors.Is(err, ErrConflict); got != tt.wantConflict {
 				t.Errorf("errors.Is(err, ErrConflict) = %v, want %v", got, tt.wantConflict)
 			}
 			assertCalls(t, exec.calls, tt.want)
+		})
+	}
+}
+
+func TestMergeApproval(t *testing.T) {
+	tests := []struct {
+		name     string
+		author   string
+		headRef  string
+		reviews  string
+		wantHead string
+		wantErr  string
+	}{
+		{name: "missing approval", author: "dependabot", reviews: `[]`,
+			wantErr: "Dependabot pull requests targeting develop require approval of the current head commit from a reviewer with write access"},
+		{name: "approval is stale", author: "dependabot", reviews: `[{"state":"APPROVED","commit":{"oid":"old"}}]`,
+			wantErr: "Dependabot pull requests targeting develop require approval of the current head commit from a reviewer with write access"},
+		{name: "approval was dismissed", author: "dependabot", reviews: `[{"state":"DISMISSED","commit":{"oid":"head"}}]`,
+			wantErr: "Dependabot pull requests targeting develop require approval of the current head commit from a reviewer with write access"},
+		{name: "current approval", author: "dependabot", reviews: `[{"state":"APPROVED","commit":{"oid":"head"}}]`, wantHead: "head"},
+		{name: "dependabot head branch", author: "octocat", headRef: "dependabot/update", reviews: `[]`,
+			wantErr: "Dependabot pull requests targeting develop require approval of the current head commit from a reviewer with write access"},
+		{name: "ordinary pull request", author: "octocat", headRef: "feature/update", reviews: `[]`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := &fakeExec{}
+			transport := &fakeTransport{response: fmt.Sprintf(`{"data":{"repository":{"pullRequest":{
+				"baseRefName":"develop","headRefName":%q,"headRefOid":"head","author":{"login":%q},
+				"latestOpinionatedReviews":{"nodes":%s}
+			}}}}`, tt.headRef, tt.author, tt.reviews)}
+			err := newTestClient(t, exec, transport).Merge(7, dependabot.MergeMethodSquash, false)
+
+			assertErr(t, err, tt.wantErr)
+			assertRequestsMatchGolden(t, transport, "merge_approval")
+			if tt.wantErr != "" {
+				assertCalls(t, exec.calls, nil)
+				return
+			}
+			args := []string{"pr", "merge", "7", "--squash"}
+			if tt.wantHead != "" {
+				args = append(args, "--match-head-commit", tt.wantHead)
+			}
+			assertCalls(t, exec.calls, [][]string{args})
 		})
 	}
 }

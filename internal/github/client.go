@@ -54,11 +54,18 @@ func (c *client) Approve(number int) error {
 }
 
 func (c *client) Merge(number int, method dependabot.MergeMethod, deleteBranch bool) error {
+	approvedHead, err := c.approvedMergeHead(number)
+	if err != nil {
+		return err
+	}
 	args := []string{"pr", "merge", strconv.Itoa(number), method.Flag()}
+	if approvedHead != "" {
+		args = append(args, "--match-head-commit", approvedHead)
+	}
 	if deleteBranch {
 		args = append(args, "--delete-branch")
 	}
-	_, err := c.run(args...)
+	_, err = c.run(args...)
 	if err == nil {
 		return nil
 	}
