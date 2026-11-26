@@ -1,11 +1,13 @@
 # gh-dependabot
 
-A [GitHub CLI](https://cli.github.com/) extension to interact with pull requests opened by Dependabot on GitHub.
+A [GitHub CLI](https://cli.github.com/) extension to interact with pull requests
+opened by Dependabot on GitHub.
 
 ## Requirements
 
 - [GitHub CLI](https://cli.github.com/) (`gh`) version 2.0 or higher
-- [Go](https://golang.org/) version 1.26 or higher (only required for building from source)
+- [Go](https://golang.org/) version 1.26 or higher (only required for building
+  from source)
 
 ## Installation
 
@@ -45,13 +47,28 @@ You can ask Dependabot to rebase its PRs that have conflicts or failing checks:
 gh dependabot rebase [PR's number...]
 ```
 
-You can interactively review Dependabot's PRs one by one, with the diff displayed and a `y`/`n` prompt for each:
+Review Dependabot PRs one by one in the terminal:
 
 ```bash
 gh dependabot interactive
 ```
 
-![Interactive mode showing a diff above a footer with PR info and an Approve? prompt](docs/interactive.png)
+On terminals at least 100 columns wide, the review shows a file list with change
+counts and a side-by-side diff. On narrower terminals, it shows a unified diff.
+Both views show line numbers and highlight additions and deletions.
+
+![Interactive review showing the file list, a side-by-side go.mod diff, and keyboard shortcuts](docs/interactive.png)
+
+| Key             | Action                                                           |
+| --------------- | ---------------------------------------------------------------- |
+| `↑` / `↓`       | Scroll the diff                                                  |
+| `[` / `]`       | Go to the previous or next changed file                          |
+| `v`             | Switch between side-by-side and unified views on a wide terminal |
+| `y` / `r` / `n` | Approve, request a rebase, or skip the PR                        |
+| `Enter` / `q`   | Run the default action shown in the footer, or quit              |
+
+`Enter` approves unless a check is failing, in which case it skips the PR. Use
+`--merge` to merge after approval.
 
 Wants more feature? Open an issue, I'll take a look as soon as I can!
 
@@ -59,9 +76,12 @@ Wants more feature? Open an issue, I'll take a look as soon as I can!
 
 Choose how to land each change on `develop`:
 
-- **Ship** — For a small, familiar change, run `make check` and push signed commits directly to `develop`.
-- **Show** — Open a PR, check the `show` box, and add the `show` label. Merge once CI passes and welcome feedback afterward.
-- **Ask** — Open a PR, check the `ask` box, and add the `ask` label. Request a review and wait for feedback before merging.
+- **Ship** — For a small, familiar change, run `make check` and push signed
+  commits directly to `develop`.
+- **Show** — Open a PR, check the `show` box, and add the `show` label. Merge
+  once CI passes and welcome feedback afterward.
+- **Ask** — Open a PR, check the `ask` box, and add the `ask` label. Request a
+  review and wait for feedback before merging.
 
 ## Building from source
 
@@ -109,5 +129,5 @@ and infers the current repository from your working directory.
    /path/to/gh-dependabot/gh-dependabot interactive
    ```
 
-   Replace `interactive` with `approve`, `merge`, `rebase`, or omit it to launch the
-   default list view. Rebuild and re-run after each change.
+   Replace `interactive` with `approve`, `merge`, `rebase`, or omit it to launch
+   the default list view. Rebuild and re-run after each change.
