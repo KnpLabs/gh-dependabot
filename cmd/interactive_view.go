@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 func (m interactiveModel) View() tea.View {
@@ -32,6 +33,10 @@ func (m interactiveModel) View() tea.View {
 		body = fmt.Sprintf("\n%s Loading diff...\n", m.spinner.View())
 	} else {
 		body = m.viewport.View()
+		if len(m.files) > 0 {
+			heading := fmt.Sprintf("File %d/%d  %s", m.fileIndex+1, len(m.files), diffName(m.files[m.fileIndex]))
+			body = lipgloss.NewStyle().Bold(true).MaxWidth(m.viewport.Width()).Render(heading) + "\n" + body
+		}
 	}
 
 	v := tea.NewView(fmt.Sprintf("%s\n%s", body, m.bottomBlock()))
@@ -85,9 +90,13 @@ func (m interactiveModel) bottomBlock() string {
 		prompt = fmt.Sprintf("%s? [y/N]", actionLabel)
 	}
 	footer := fmt.Sprintf("%s   (%s, r=rebase, n=skip, ↑↓=scroll, q=quit)", prompt, yLegend)
+	if len(m.files) > 1 {
+		footer += "  [ ]=change file"
+	}
 	if m.pending > 0 {
 		footer = fmt.Sprintf("%s %s [%d in-flight]", m.spinner.View(), footer, m.pending)
 	}
+	footer = strings.Join(wrapWords(footer, sepWidth), "\n")
 
 	return fmt.Sprintf("%s\n%s\n%s\n%s", separator, titleBlock.String(), status, footer)
 }
@@ -100,6 +109,9 @@ func (m *interactiveModel) resizeViewport() {
 	bottomLines := 1
 	if bottom != "" {
 		bottomLines = strings.Count(bottom, "\n") + 1
+	}
+	if len(m.files) > 0 {
+		bottomLines++
 	}
 	m.viewport.SetWidth(m.width)
 	m.viewport.SetHeight(maxInt(m.height-bottomLines, 3))

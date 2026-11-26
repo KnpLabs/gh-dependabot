@@ -2,15 +2,17 @@ package cmd
 
 import (
 	"errors"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/bluekeyes/go-gitdiff/gitdiff"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
 )
 
 type diffLoadedMsg struct {
 	number int
-	diff   string
+	files  []*gitdiff.File
 	err    error
 }
 
@@ -33,7 +35,11 @@ type rebaseDoneMsg struct {
 func fetchDiffCmd(client github.Client, number int) tea.Cmd {
 	return func() tea.Msg {
 		diff, err := client.Diff(number)
-		return diffLoadedMsg{number: number, diff: diff, err: err}
+		if err != nil {
+			return diffLoadedMsg{number: number, err: err}
+		}
+		files, _, err := gitdiff.Parse(strings.NewReader(diff))
+		return diffLoadedMsg{number: number, files: files, err: err}
 	}
 }
 

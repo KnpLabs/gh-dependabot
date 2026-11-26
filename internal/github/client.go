@@ -79,7 +79,7 @@ func (c *client) RequestRebase(number int) error {
 }
 
 func (c *client) Diff(number int) (string, error) {
-	return c.run("pr", "diff", strconv.Itoa(number))
+	return c.run("pr", "diff", strconv.Itoa(number), "--color=never")
 }
 
 func (c *client) run(args ...string) (string, error) {

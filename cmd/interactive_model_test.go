@@ -3,12 +3,14 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 	"github.com/knplabs/gh-dependabot/internal/github"
 )
@@ -169,10 +171,53 @@ func TestInteractiveListErrorQuits(t *testing.T) {
 func TestInteractiveLoadsFirstDiff(t *testing.T) {
 	d := newTUIDriver(t, reviewQueue, nil)
 
-	if d.model.loadingDiff || d.model.diff != "diff of #1" {
-		t.Errorf("loadingDiff = %v, diff = %q, want the diff of #1", d.model.loadingDiff, d.model.diff)
+	if view := ansi.Strip(d.model.View().Content); d.model.loadingDiff || !strings.Contains(view, "+ go 1.1") {
+		t.Errorf("want the diff of #1 in the view, got:\n%s", view)
 	}
 	d.client.assertCalls(t, []string{"ListOpenDependabotPRs", "Diff 1"})
+}
+
+func TestInteractiveDiffFiles(t *testing.T) {
+	patch, err := os.ReadFile("testdata/dependency.diff")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fakeClient{prs: reviewQueue, diffs: map[int]string{1: string(patch)}}
+	d := &tuiDriver{t: t, model: newInteractiveModel(client), client: client}
+	d.settle(d.run(d.model.Init())...)
+
+	assertView := func(want ...string) {
+		t.Helper()
+		view := ansi.Strip(d.model.View().Content)
+		for _, line := range want {
+			if !strings.Contains(view, line) {
+				t.Errorf("view missing %q:\n%s", line, view)
+			}
+		}
+	}
+	assertView("File 1/2  go.mod", " 9 10 │   require (", "10    │ -     example.org/lib v1.0.0", "   11 │ +     example.org/lib v1.1.0", "30 31 │   )", "[ ]=change file")
+	d.settle(d.press("[")...)
+	assertView("File 1/2  go.mod")
+
+	d.settle(d.send(tea.WindowSizeMsg{Width: 80, Height: 10})...)
+	d.model.viewport.SetYOffset(4)
+	if d.model.viewport.YOffset() == 0 {
+		t.Fatal("expected scroll offset within the first file")
+	}
+	assertView("File 1/2  go.mod")
+	d.settle(d.press("]")...)
+	assertView("File 2/2  go.sum", "1   │ - example.org/lib v1.0.0")
+	if got := d.model.viewport.YOffset(); got != 0 {
+		t.Errorf("scroll offset after changing files = %d, want 0", got)
+	}
+	d.settle(d.press("]")...)
+	assertView("File 2/2  go.sum")
+	d.settle(d.press("[")...)
+	assertView("File 1/2  go.mod")
+	d.settle(d.press("]")...)
+	d.settle(d.press("n")...)
+	assertView("File 1/1  go.mod", "+ go 1.5")
+	client.assertCalls(t, []string{"ListOpenDependabotPRs", "Diff 1", "Diff 5"})
 }
 
 func TestInteractiveKeys(t *testing.T) {
@@ -346,14 +391,14 @@ func TestInteractiveIgnoresStaleDiff(t *testing.T) {
 		t.Fatalf("index = %d, loadingDiff = %v, want the diff of #5 loading", d.model.index, d.model.loadingDiff)
 	}
 
-	d.settle(diffLoadedMsg{number: 1, diff: "stale diff of #1"})
-	if !d.model.loadingDiff || d.model.diff != "" {
-		t.Errorf("stale diff applied: loadingDiff = %v, diff = %q", d.model.loadingDiff, d.model.diff)
+	d.settle(d.run(fetchDiffCmd(d.client, 1))...)
+	if !d.model.loadingDiff || len(d.model.files) != 0 {
+		t.Errorf("stale diff applied: loadingDiff = %v, files = %d", d.model.loadingDiff, len(d.model.files))
 	}
 
 	d.settle(nextDiff...)
-	if d.model.loadingDiff || d.model.diff != "diff of #5" {
-		t.Errorf("loadingDiff = %v, diff = %q, want the diff of #5", d.model.loadingDiff, d.model.diff)
+	if view := ansi.Strip(d.model.View().Content); d.model.loadingDiff || !strings.Contains(view, "+ go 1.5") {
+		t.Errorf("want the diff of #5 in the view, got:\n%s", view)
 	}
 }
 
@@ -363,8 +408,8 @@ func TestInteractiveDiffError(t *testing.T) {
 	d.settle(d.press("n")...)
 	d.settle(diffLoadedMsg{number: 5, err: errors.New("could not find pull request")})
 
-	if d.model.diff != "Failed to load diff: could not find pull request" {
-		t.Errorf("diff = %q", d.model.diff)
+	if view := d.model.View().Content; !strings.Contains(view, "Failed to load diff: could not find pull request") {
+		t.Errorf("missing diff error in the view:\n%s", view)
 	}
 }
 
