@@ -49,7 +49,9 @@ type graphQLRequest struct {
 type fakeTransport struct {
 	t        *testing.T
 	fixture  string
+	fixtures []string
 	status   int
+	statuses []int
 	requests []graphQLRequest
 }
 
@@ -60,11 +62,18 @@ func (f *fakeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	f.requests = append(f.requests, body)
 
-	data, err := os.ReadFile(filepath.Join("testdata", f.fixture))
+	fixture := f.fixture
+	if len(f.fixtures) > len(f.requests)-1 {
+		fixture = f.fixtures[len(f.requests)-1]
+	}
+	data, err := os.ReadFile(filepath.Join("testdata", fixture))
 	if err != nil {
 		f.t.Fatalf("reading fixture: %v", err)
 	}
 	status := f.status
+	if len(f.statuses) > len(f.requests)-1 {
+		status = f.statuses[len(f.requests)-1]
+	}
 	if status == 0 {
 		status = http.StatusOK
 	}

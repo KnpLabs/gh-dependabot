@@ -26,9 +26,9 @@ var listCmd = &cobra.Command{
 
 		out := cmd.OutOrStdout()
 		for _, pr := range prs {
-			title := diffText(ansi.Strip(pr.Title))
+			title := plainPRTitle(pr.Title)
 			if _, err := fmt.Fprintf(out, "%d\t%s\t%s\t%s\n",
-				pr.Number, title, ansi.Strip(checksStatus(pr.Checks, false)), ansi.Strip(mergeableStatus(pr.Mergeable, false))); err != nil {
+				pr.Number, title, checkLabel(pr.Checks).text, mergeabilityLabel(pr.Mergeable).text); err != nil {
 				return err
 			}
 		}
@@ -38,4 +38,8 @@ var listCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(listCmd)
+}
+
+func plainPRTitle(title string) string {
+	return diffText(ansi.Strip(title))
 }

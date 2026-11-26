@@ -1,0 +1,19 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "pageInfo": {"hasNextPage": false, "endCursor": null},
+        "nodes": [
+          {
+            "number": 101,
+            "title": "Bump example from 1.0 to 1.1",
+            "headRefName": "dependabot/npm_and_yarn/example-1.1",
+            "author": {"login": "dependabot[bot]"},
+            "mergeable": "MERGEABLE",
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": null}}]}
+          }
+        ]
+      }
+    }
+  }
+}

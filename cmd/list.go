@@ -145,27 +145,48 @@ func fetchDependabotPRsCmd(client github.Client) tea.Cmd {
 	}
 }
 
+type statusLabel struct {
+	text  string
+	color string
+}
+
+func (label statusLabel) render(dark bool) string {
+	color := label.color
+	if color == "" {
+		color = neutralStatusColor(dark)
+	}
+	return colorStatus(label.text, color)
+}
+
 func checksStatus(state dependabot.CheckState, dark bool) string {
+	return checkLabel(state).render(dark)
+}
+
+func checkLabel(state dependabot.CheckState) statusLabel {
 	switch state {
 	case dependabot.CheckPassing:
-		return colorStatus("✓ passing", "2")
+		return statusLabel{text: "✓ passing", color: "2"}
 	case dependabot.CheckFailing:
-		return colorStatus("✗ failing", "1")
+		return statusLabel{text: "✗ failing", color: "1"}
 	case dependabot.CheckPending:
-		return colorStatus("● pending", neutralStatusColor(dark))
+		return statusLabel{text: "● pending"}
 	default:
-		return colorStatus("none", neutralStatusColor(dark))
+		return statusLabel{text: "none"}
 	}
 }
 
 func mergeableStatus(m dependabot.Mergeability, dark bool) string {
+	return mergeabilityLabel(m).render(dark)
+}
+
+func mergeabilityLabel(m dependabot.Mergeability) statusLabel {
 	switch m {
 	case dependabot.Mergeable:
-		return colorStatus("✓ yes", "2")
+		return statusLabel{text: "✓ yes", color: "2"}
 	case dependabot.Conflicting:
-		return colorStatus("✗ conflict", "1")
+		return statusLabel{text: "✗ conflict", color: "1"}
 	default:
-		return colorStatus("● unknown", neutralStatusColor(dark))
+		return statusLabel{text: "● unknown"}
 	}
 }
 

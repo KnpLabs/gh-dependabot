@@ -1,0 +1,10 @@
+{
+  "data": {
+    "repository": {
+      "pullRequests": {
+        "pageInfo": {"hasNextPage": true, "endCursor": "cursor-100"},
+        "nodes": []
+      }
+    }
+  }
+}

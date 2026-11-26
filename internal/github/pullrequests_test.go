@@ -1,7 +1,9 @@
 package github
 
 import (
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
@@ -142,5 +144,40 @@ func TestListOpenDependabotPRs(t *testing.T) {
 				t.Errorf("ListOpenDependabotPRs() =\n%+v\nwant\n%+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestListOpenDependabotPRsPaginates(t *testing.T) {
+	transport := &fakeTransport{fixtures: []string{"pull_requests_page_1.json", "pull_requests_page_2.json"}}
+	got, err := newTestClient(t, nil, transport).ListOpenDependabotPRs()
+	if err != nil {
+		t.Fatalf("ListOpenDependabotPRs() error: %v", err)
+	}
+	if len(got) != 1 || got[0].Number != 101 {
+		t.Fatalf("ListOpenDependabotPRs() = %+v, want Dependabot PR #101 from page 2", got)
+	}
+	if len(transport.requests) != 2 {
+		t.Fatalf("request count = %d, want 2", len(transport.requests))
+	}
+	if got := transport.requests[0].Variables["after"]; got != nil {
+		t.Errorf("first request after = %v, want nil", got)
+	}
+	if got := transport.requests[1].Variables["after"]; got != "cursor-100" {
+		t.Errorf("second request after = %v, want cursor-100", got)
+	}
+	assertRequestsMatchGolden(t, transport, "dependabot_prs_pagination")
+}
+
+func TestListOpenDependabotPRsReturnsErrorFromLaterPage(t *testing.T) {
+	transport := &fakeTransport{
+		fixtures: []string{"pull_requests_page_1.json", "pull_requests_page_2.json"},
+		statuses: []int{http.StatusOK, http.StatusBadGateway},
+	}
+	got, err := newTestClient(t, nil, transport).ListOpenDependabotPRs()
+	if err == nil || !strings.HasPrefix(err.Error(), "failed to query pull requests: ") {
+		t.Fatalf("ListOpenDependabotPRs() = %v, %v; want wrapped later-page error", got, err)
+	}
+	if len(transport.requests) != 2 {
+		t.Fatalf("request count = %d, want 2", len(transport.requests))
 	}
 }
