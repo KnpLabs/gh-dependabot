@@ -72,6 +72,32 @@ Both views show line numbers and highlight additions and deletions.
 
 Wants more feature? Open an issue, I'll take a look as soon as I can!
 
+## Review with a coding agent
+
+Use a build that exposes `list` and `view` in `gh dependabot --help`. From the
+gh-dependabot checkout, link the versioned skill into your agent's skills
+directory.
+
+### Codex
+
+```bash
+mkdir -p "$HOME/.agents/skills" && ln -s "$(pwd -P)/skills/dependabot-review" "$HOME/.agents/skills/"
+```
+
+### Claude Code
+
+```bash
+mkdir -p "$HOME/.claude/skills" && ln -s "$(pwd -P)/skills/dependabot-review" "$HOME/.claude/skills/"
+```
+
+Start an agent session in the repository you want to review and use a request like this.
+
+> Review the open Dependabot PRs and recommend what to do with each. Analysis only.
+
+The agent lists the PRs, inspects each relevant PR, and reports a recommendation
+with evidence. To authorize an action, name the PR and the action you want, for
+example, “Approve PR #123 if the update is compatible.”
+
 ## Contributing with Ship / Show / Ask
 
 Choose how to land each change on `develop`:

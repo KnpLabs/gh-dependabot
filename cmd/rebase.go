@@ -10,8 +10,8 @@ var rebaseCmd = &cobra.Command{
 	Short: "Ask Dependabot to rebase its pull requests that have conflicts or failing status checks",
 	Long: `Ask Dependabot to rebase its pull requests that either conflict with
 their base branch or have a failing status check, by commenting "@dependabot rebase".
-Optionally specify one or more pull request numbers to target specific PRs,
-otherwise all matching PRs are targeted.`,
+Pass PR numbers to target specific PRs. With no PR numbers, this command
+requests a rebase for every eligible Dependabot PR in the current repository.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		numbers, err := parsePRNumbers(args)
 		if err != nil {
