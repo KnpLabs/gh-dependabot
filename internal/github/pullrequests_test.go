@@ -181,3 +181,38 @@ func TestListOpenDependabotPRsReturnsErrorFromLaterPage(t *testing.T) {
 		t.Fatalf("request count = %d, want 2", len(transport.requests))
 	}
 }
+
+func TestOpenDependabotPR(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		wantErr string
+	}{
+		{name: "returns one open Dependabot pull request with its full body", fixture: "pull_request_by_number.json"},
+		{name: "returns not found for a missing pull request", fixture: "pull_request_by_number_null.json", wantErr: "pull request #42 not found"},
+		{name: "rejects a closed pull request", fixture: "pull_request_by_number_closed.json", wantErr: "pull request #42 is not open"},
+		{name: "rejects a pull request outside Dependabot scope", fixture: "pull_request_by_number_out_of_scope.json", wantErr: "pull request #42 is not a Dependabot pull request"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &fakeTransport{fixture: tt.fixture}
+			got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+			assertErr(t, err, tt.wantErr)
+			assertRequestsMatchGolden(t, transport, "dependabot_pr_by_number")
+			if tt.wantErr != "" {
+				return
+			}
+			want := PullRequestDetails{
+				PullRequest: dependabot.PullRequest{
+					Number: 42, Title: "Bump example from 1.0 to 1.1", Author: "dependabot[bot]",
+					HeadRefName: "dependabot/npm_and_yarn/example-1.1", Checks: dependabot.CheckPending,
+					Mergeable: dependabot.Mergeable,
+				},
+				Body: "Bumps [example](https://example.test) from 1.0 to 1.1.\n\nRelease notes: full body.",
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("OpenDependabotPR(42) =\n%+v\nwant\n%+v", got, want)
+			}
+		})
+	}
+}

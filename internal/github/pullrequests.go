@@ -6,38 +6,54 @@ import (
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
 
-const dependabotPRsQuery = `query DependabotPRs($owner: String!, $name: String!, $after: String) {
-		repository(owner: $owner, name: $name) {
-			pullRequests(states: OPEN, first: 100, after: $after) {
-				pageInfo { hasNextPage endCursor }
-				nodes {
-					number
-					title
-					headRefName
-					author { login }
-					mergeable
-					commits(last: 1) {
+const dependabotPRFields = `fragment DependabotPRFields on PullRequest {
+	number
+	title
+	headRefName
+	author { login }
+	mergeable
+	commits(last: 1) {
+		nodes {
+			commit {
+				statusCheckRollup {
+					contexts(first: 100) {
 						nodes {
-							commit {
-								statusCheckRollup {
-									contexts(first: 100) {
-										nodes {
-											... on CheckRun { conclusion }
-											... on StatusContext { state }
-										}
-									}
-								}
-							}
+							... on CheckRun { conclusion }
+							... on StatusContext { state }
 						}
 					}
 				}
 			}
 		}
-	}`
+	}
+}`
+
+const dependabotPRsQuery = `query DependabotPRs($owner: String!, $name: String!, $after: String) {
+		repository(owner: $owner, name: $name) {
+			pullRequests(states: OPEN, first: 100, after: $after) {
+				pageInfo { hasNextPage endCursor }
+				nodes {
+					...DependabotPRFields
+				}
+			}
+		}
+	}` + "\n" + dependabotPRFields
+
+const dependabotPRByNumberQuery = `query DependabotPRByNumber($owner: String!, $name: String!, $number: Int!) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $number) {
+			body
+			state
+			...DependabotPRFields
+		}
+	}
+}` + "\n" + dependabotPRFields
 
 type pullRequestNode struct {
 	Number      int    `json:"number"`
 	Title       string `json:"title"`
+	Body        string `json:"body"`
+	State       string `json:"state"`
 	HeadRefName string `json:"headRefName"`
 	Author      struct {
 		Login string `json:"login"`
@@ -57,6 +73,31 @@ type pullRequestNode struct {
 			} `json:"commit"`
 		} `json:"nodes"`
 	} `json:"commits"`
+}
+
+func (c *client) OpenDependabotPR(number int) (PullRequestDetails, error) {
+	variables := c.repoVariables()
+	variables["number"] = number
+	var result struct {
+		Repository struct {
+			PullRequest *pullRequestNode `json:"pullRequest"`
+		} `json:"repository"`
+	}
+	if err := c.graphql.Do(dependabotPRByNumberQuery, variables, &result); err != nil {
+		return PullRequestDetails{}, fmt.Errorf("failed to query pull request #%d: %w", number, err)
+	}
+	node := result.Repository.PullRequest
+	if node == nil {
+		return PullRequestDetails{}, fmt.Errorf("pull request #%d not found", number)
+	}
+	if node.State != "OPEN" {
+		return PullRequestDetails{}, fmt.Errorf("pull request #%d is not open", number)
+	}
+	pr := node.toPullRequest()
+	if !pr.IsDependabot() {
+		return PullRequestDetails{}, fmt.Errorf("pull request #%d is not a Dependabot pull request", number)
+	}
+	return PullRequestDetails{PullRequest: pr, Body: node.Body}, nil
 }
 
 func (c *client) ListOpenDependabotPRs() ([]dependabot.PullRequest, error) {

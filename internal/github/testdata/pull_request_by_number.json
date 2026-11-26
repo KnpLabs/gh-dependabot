@@ -1,0 +1,18 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "number": 42,
+        "title": "Bump example from 1.0 to 1.1",
+        "body": "Bumps [example](https://example.test) from 1.0 to 1.1.\n\nRelease notes: full body.",
+        "state": "OPEN",
+        "headRefName": "dependabot/npm_and_yarn/example-1.1",
+        "author": {"login": "dependabot[bot]"},
+        "mergeable": "MERGEABLE",
+        "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": [
+          {"state": "PENDING"}
+        ]}}}}]}
+      }
+    }
+  }
+}

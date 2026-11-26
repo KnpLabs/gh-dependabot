@@ -17,11 +17,17 @@ var ErrConflict = errors.New("merge conflict")
 
 type Client interface {
 	ListOpenDependabotPRs() ([]dependabot.PullRequest, error)
+	OpenDependabotPR(number int) (PullRequestDetails, error)
 	AllowedMergeMethods() (dependabot.AllowedMergeMethods, error)
 	Approve(number int) error
 	Merge(number int, method dependabot.MergeMethod, deleteBranch bool) error
 	RequestRebase(number int) error
 	Diff(number int) (string, error)
+}
+
+type PullRequestDetails struct {
+	PullRequest dependabot.PullRequest
+	Body        string
 }
 
 type Exec func(args ...string) (stdout, stderr bytes.Buffer, err error)

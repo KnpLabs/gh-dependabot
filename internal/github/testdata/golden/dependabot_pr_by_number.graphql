@@ -1,0 +1,32 @@
+query DependabotPRByNumber($owner: String!, $name: String!, $number: Int!) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $number) {
+			body
+			state
+			...DependabotPRFields
+		}
+	}
+}
+fragment DependabotPRFields on PullRequest {
+	number
+	title
+	headRefName
+	author { login }
+	mergeable
+	commits(last: 1) {
+		nodes {
+			commit {
+				statusCheckRollup {
+					contexts(first: 100) {
+						nodes {
+							... on CheckRun { conclusion }
+							... on StatusContext { state }
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+variables: {"name":"fake-repo","number":42,"owner":"knplabs"}

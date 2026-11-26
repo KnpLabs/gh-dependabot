@@ -25,11 +25,14 @@ var openPullRequests = []dependabot.PullRequest{
 type fakeClient struct {
 	prs        []dependabot.PullRequest
 	listErr    error
+	view       github.PullRequestDetails
+	viewErr    error
 	allowed    dependabot.AllowedMergeMethods
 	approveErr map[int]error
 	mergeErr   map[int]error
 	rebaseErr  map[int]error
 	diffs      map[int]string
+	diffErr    map[int]error
 	calls      []string
 }
 
@@ -50,6 +53,11 @@ func newFakeClient(t *testing.T) *fakeClient {
 func (f *fakeClient) ListOpenDependabotPRs() ([]dependabot.PullRequest, error) {
 	f.calls = append(f.calls, "ListOpenDependabotPRs")
 	return f.prs, f.listErr
+}
+
+func (f *fakeClient) OpenDependabotPR(number int) (github.PullRequestDetails, error) {
+	f.calls = append(f.calls, fmt.Sprintf("OpenDependabotPR %d", number))
+	return f.view, f.viewErr
 }
 
 func (f *fakeClient) AllowedMergeMethods() (dependabot.AllowedMergeMethods, error) {
@@ -74,6 +82,9 @@ func (f *fakeClient) RequestRebase(number int) error {
 
 func (f *fakeClient) Diff(number int) (string, error) {
 	f.calls = append(f.calls, fmt.Sprintf("Diff %d", number))
+	if err := f.diffErr[number]; err != nil {
+		return "", err
+	}
 	if diff, ok := f.diffs[number]; ok {
 		return diff, nil
 	}
