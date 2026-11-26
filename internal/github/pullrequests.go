@@ -56,7 +56,7 @@ const dependabotPRsQuery = `query DependabotPRs($owner: String!, $name: String!,
 const dependabotPRByNumberQuery = `query DependabotPRByNumber($owner: String!, $name: String!, $number: Int!) {
 	repository(owner: $owner, name: $name) {
 		pullRequest(number: $number) {
-			body
+			bodyText
 			state
 			...DependabotPRFields
 		}
@@ -66,7 +66,7 @@ const dependabotPRByNumberQuery = `query DependabotPRByNumber($owner: String!, $
 type pullRequestNode struct {
 	Number      int    `json:"number"`
 	Title       string `json:"title"`
-	Body        string `json:"body"`
+	Body        string `json:"bodyText"`
 	State       string `json:"state"`
 	HeadRefName string `json:"headRefName"`
 	Author      struct {

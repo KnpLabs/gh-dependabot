@@ -208,7 +208,7 @@ func TestOpenDependabotPR(t *testing.T) {
 					HeadRefName: "dependabot/npm_and_yarn/example-1.1", Checks: dependabot.CheckPending,
 					Mergeable: dependabot.Mergeable,
 				},
-				Body: "Bumps [example](https://example.test) from 1.0 to 1.1.\n\nRelease notes: full body.",
+				Body: "Bumps example from 1.0 to 1.1.\n\nRelease notes: full body.",
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Errorf("OpenDependabotPR(42) =\n%+v\nwant\n%+v", got, want)
