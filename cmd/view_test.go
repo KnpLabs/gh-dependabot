@@ -68,7 +68,7 @@ func TestViewCommand(t *testing.T) {
 		if got.err != nil {
 			t.Fatalf("help error: %v", got.err)
 		}
-		if !strings.Contains(got.stdout, "view") {
+		if !strings.Contains(got.stdout, "\n  view ") {
 			t.Errorf("root help does not list view: %q", got.stdout)
 		}
 	})
