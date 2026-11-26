@@ -11,9 +11,9 @@ import (
 
 var mergeCmd = &cobra.Command{
 	Use:   "merge [pull request numbers...]",
-	Short: "Merge dependabot's pull requests that have passed or skipped status checks and are mergeable",
-	Long: `Merge dependabot's pull requests that have either a status check
-marked as passed or skipped and are mergeable. Pass PR numbers to target specific PRs.
+	Short: "Merge eligible Dependabot pull requests",
+	Long: `Merge mergeable Dependabot pull requests with no status checks or with all checks
+passing or skipped. Pass PR numbers to target specific PRs.
 With no PR numbers, this command merges every eligible Dependabot PR in the current repository.
 
 If a merge fails because of a conflict, this command requests a Dependabot rebase.
