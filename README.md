@@ -78,20 +78,9 @@ Use GitHub CLI 2.106.0 or later and a gh-dependabot release that includes the
 skill and exposes `list` and `view` in `gh dependabot --help`. Install the skill
 at user scope to use it across repositories.
 
-### Codex
-
 ```bash
-gh skill install KnpLabs/gh-dependabot gh-dependanbot --agent codex --scope user
+gh skill install KnpLabs/gh-dependabot gh-dependanbot
 ```
-
-### Claude Code
-
-```bash
-gh skill install KnpLabs/gh-dependabot gh-dependanbot --agent claude-code --scope user
-```
-
-For another supported agent, replace the `--agent` value with an ID listed in
-`gh skill install --help`.
 
 When a new gh-dependabot release is available, update the extension and the
 installed skill.
@@ -101,13 +90,18 @@ gh extension upgrade gh-dependabot
 gh skill update gh-dependanbot
 ```
 
-Start an agent session in the repository you want to review and use a request like this.
+Start an agent session in the repository you want to review and use a request
+like this.
 
-> Review the open Dependabot PRs and recommend what to do with each. Analysis only.
+```sh
+/gh-dependabot
+```
 
 The agent lists the PRs, inspects each relevant PR, and reports a recommendation
-with evidence. To authorize an action, name the PR and the action you want, for
-example, “Approve PR #123 if the update is compatible.”
+with evidence.
+
+To authorize a specific action, name the PR and the action you want, for
+example, “Do not approve or merge PR #123 even if the update is compatible.”
 
 ## Contributing with Ship / Show / Ask
 
