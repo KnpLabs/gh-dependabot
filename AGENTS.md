@@ -108,3 +108,18 @@ Key conventions:
 Don't add comments to the code (doc comments included) unless the user
 explicitly asks for them. Rely on clear names instead. Leave existing comments
 alone.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues for KnpLabs/gh-dependabot. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the default triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Use the single-context layout. See `docs/agents/domain.md`.
