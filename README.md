@@ -81,13 +81,13 @@ at user scope to use it across repositories.
 ### Codex
 
 ```bash
-gh skill install KnpLabs/gh-dependabot dependabot-review --agent codex --scope user
+gh skill install KnpLabs/gh-dependabot gh-dependanbot --agent codex --scope user
 ```
 
 ### Claude Code
 
 ```bash
-gh skill install KnpLabs/gh-dependabot dependabot-review --agent claude-code --scope user
+gh skill install KnpLabs/gh-dependabot gh-dependanbot --agent claude-code --scope user
 ```
 
 For another supported agent, replace the `--agent` value with an ID listed in
@@ -98,7 +98,7 @@ installed skill.
 
 ```bash
 gh extension upgrade gh-dependabot
-gh skill update dependabot-review
+gh skill update gh-dependanbot
 ```
 
 Start an agent session in the repository you want to review and use a request like this.

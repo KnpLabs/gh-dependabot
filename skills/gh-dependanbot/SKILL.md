@@ -1,5 +1,5 @@
 ---
-name: dependabot-review
+name: gh-dependanbot
 description: Review open Dependabot pull requests, assess dependency update compatibility, and recommend what to do with each update. Use for analysis-only reviews and reviews with authorized PR actions.
 ---
 
