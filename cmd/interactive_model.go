@@ -93,7 +93,14 @@ func (m interactiveModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.loadingDiff = true
-		return m, tea.Batch(m.spinner.Tick, fetchDiffCmd(m.client, m.prs[0].Number))
+		return m, tea.Batch(m.spinner.Tick, fetchDiffCmd(m.client, m.prs[0].Number), refreshMergeability(m.client, m.prs, m.index))
+
+	case mergeabilityRefreshedMsg:
+		if m.done {
+			return m, nil
+		}
+		m.prs = msg
+		return m, refreshMergeability(m.client, m.prs, m.index)
 
 	case prsErrorMsg:
 		m.loadingList = false

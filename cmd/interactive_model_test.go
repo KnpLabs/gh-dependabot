@@ -519,7 +519,7 @@ func TestDefaultApprove(t *testing.T) {
 		{dependabot.CheckFailing, false},
 	}
 	for _, tt := range tests {
-		t.Run(checksStatus(tt.checks), func(t *testing.T) {
+		t.Run(ansi.Strip(checksStatus(tt.checks, false)), func(t *testing.T) {
 			if got := defaultApprove(dependabot.PullRequest{Checks: tt.checks}); got != tt.want {
 				t.Errorf("defaultApprove(%v) = %v, want %v", tt.checks, got, tt.want)
 			}

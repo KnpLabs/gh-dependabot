@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
 
@@ -11,15 +13,16 @@ func TestChecksStatus(t *testing.T) {
 	tests := []struct {
 		state dependabot.CheckState
 		want  string
+		color string
 	}{
-		{dependabot.CheckNone, "none"},
-		{dependabot.CheckPassing, "✓ passing"},
-		{dependabot.CheckFailing, "✗ failing"},
-		{dependabot.CheckPending, "● pending"},
+		{dependabot.CheckNone, "none", "30"},
+		{dependabot.CheckPassing, "✓ passing", "32"},
+		{dependabot.CheckFailing, "✗ failing", "31"},
+		{dependabot.CheckPending, "● pending", "30"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.want, func(t *testing.T) {
-			if got := checksStatus(tt.state); got != tt.want {
+			if got := checksStatus(tt.state, false); ansi.Strip(got) != tt.want || !strings.HasPrefix(got, "\x1b["+tt.color+"m") {
 				t.Errorf("checksStatus(%v) = %q, want %q", tt.state, got, tt.want)
 			}
 		})
@@ -30,15 +33,16 @@ func TestMergeableStatus(t *testing.T) {
 	tests := []struct {
 		mergeable dependabot.Mergeability
 		want      string
+		color     string
 	}{
-		{dependabot.Mergeable, "✓ yes"},
-		{dependabot.Conflicting, "✗ conflict"},
-		{dependabot.Unknown, "● unknown"},
-		{"", "● unknown"},
+		{dependabot.Mergeable, "✓ yes", "32"},
+		{dependabot.Conflicting, "✗ conflict", "31"},
+		{dependabot.Unknown, "● unknown", "30"},
+		{"", "● unknown", "30"},
 	}
 	for _, tt := range tests {
 		t.Run(string(tt.mergeable), func(t *testing.T) {
-			if got := mergeableStatus(tt.mergeable); got != tt.want {
+			if got := mergeableStatus(tt.mergeable, false); ansi.Strip(got) != tt.want || !strings.HasPrefix(got, "\x1b["+tt.color+"m") {
 				t.Errorf("mergeableStatus(%q) = %q, want %q", tt.mergeable, got, tt.want)
 			}
 		})

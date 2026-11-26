@@ -89,7 +89,7 @@ func (m interactiveModel) bottomBlock() string {
 	}
 
 	status := fmt.Sprintf("Checks: %s   Mergeable: %s",
-		checksStatus(pr.Checks), mergeableStatus(pr.Mergeable))
+		checksStatus(pr.Checks, m.darkBackground), mergeableStatus(pr.Mergeable, m.darkBackground))
 
 	footerLines := m.shortcutRows(pr, sepWidth)
 	if m.loadingDiff {
