@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -66,10 +67,14 @@ func applyUpdates(cmd *cobra.Command, output io.Writer) error {
 }
 
 func runUpdate(cmd *cobra.Command, output io.Writer, args ...string) error {
-	stdout, stderr, err := gh.ExecContext(cmd.Context(), args...)
-	fmt.Fprint(output, stdout.String())
-	fmt.Fprint(cmd.ErrOrStderr(), stderr.String())
+	ghPath, err := gh.Path()
 	if err != nil {
+		return err
+	}
+	update := exec.CommandContext(cmd.Context(), ghPath, args...)
+	update.Stdout = output
+	update.Stderr = output
+	if err := update.Run(); err != nil {
 		return fmt.Errorf("gh %s: %w", strings.Join(args, " "), err)
 	}
 	return nil
