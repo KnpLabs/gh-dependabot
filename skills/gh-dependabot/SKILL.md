@@ -8,6 +8,7 @@ description:
 # Review Dependabot pull requests
 
 Use `gh dependabot --help` and per-command help for syntax.
+If `gh dependabot` prompts for an update, answer `y` and continue the review.
 
 1. **Scope.** Review the PR numbers the user gives. Otherwise, use
    `gh dependabot list` to find open Dependabot PRs in scope. Report a list
