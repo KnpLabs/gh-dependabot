@@ -28,6 +28,7 @@ Use the arrow keys to navigate and q to quit.
 For agent-driven reviews, use view to inspect the diff, checks, mergeability,
 and labels. Assess compatibility, decide which actions the evidence supports,
 and carry them out for explicit PR numbers within the user's instructions.`,
+	PersistentPreRun: checkForUpdates,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := newClient()
 		if err != nil {

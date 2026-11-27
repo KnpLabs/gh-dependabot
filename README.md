@@ -82,12 +82,13 @@ at user scope to use it across repositories.
 gh skill install KnpLabs/gh-dependabot gh-dependabot
 ```
 
-When a new gh-dependabot release is available, update the extension and the
-installed skill.
+`gh dependabot` checks for updates to the extension and its installed skill
+before running a command. It asks for confirmation in an interactive terminal
+and applies available updates automatically in non-interactive runs. It then
+continues the requested command. To check and apply updates on demand:
 
 ```bash
-gh extension upgrade gh-dependabot
-gh skill update gh-dependabot
+gh dependabot update
 ```
 
 Start an agent session in the repository you want to review and use a request
