@@ -17,6 +17,8 @@ For a PR, check one box in the template and apply the matching GitHub label.
 
 ## Commands
 
+Use CLI defaults for optional arguments and flags unless the user requests an override.
+
 Prefer the `Makefile` targets over calling `go` directly (run `make` to list
 them):
 

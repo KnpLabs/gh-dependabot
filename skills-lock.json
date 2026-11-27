@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "skills": {
+    "cli-style": {
+      "source": "spf13/cli-style",
+      "commit": "6390219d4ad6ee0909e5125bb139117c26e886f6",
+      "sourceType": "github",
+      "skillPath": "cli-style/SKILL.md",
+      "computedHash": "7b8c8b4b01c501adf4ff8341e52f02cea2ae6a49dfadbd707bfd916d9b9aa5e7"
+    },
+    "cobra-viper": {
+      "source": "spf13/go-skills",
+      "commit": "383c2f8916313b7f1260a6d15d92a468e4ecc89e",
+      "sourceType": "github",
+      "skillPath": "cobra-viper/SKILL.md",
+      "computedHash": "76d292f0320684e64bd7aad7bcb87f045fab12dd3f532f683b09c00ed9455f2a"
+    },
+    "go": {
+      "source": "spf13/go-skills",
+      "commit": "383c2f8916313b7f1260a6d15d92a468e4ecc89e",
+      "sourceType": "github",
+      "skillPath": "go/SKILL.md",
+      "computedHash": "c08dbdf02ad162d5c9362cc6199ea65946625967ffe14eac6580980fae5f63b9"
+    }
+  }
+}
