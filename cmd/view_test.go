@@ -10,10 +10,11 @@ import (
 )
 
 func TestViewCommand(t *testing.T) {
-	t.Run("prints the title, full body, check status, and unified diff", func(t *testing.T) {
+	t.Run("prints the title, full body, checks, mergeability, labels, and unified diff", func(t *testing.T) {
 		client := newFakeClient(t)
 		client.view = github.PullRequestDetails{
-			PullRequest: dependabot.PullRequest{Number: 41, Title: "Bump example", Checks: dependabot.CheckPassing},
+			PullRequest: dependabot.PullRequest{Number: 41, Title: "Bump example", Checks: dependabot.CheckPassing, Mergeable: dependabot.Conflicting},
+			Labels:      []string{"dependencies", "waiting for maintainer", "status/hold"},
 			Body:        "Full body line one.\r\n\r\n\x1b[31mFull body line two.\x1b[0m",
 		}
 		client.diffs = map[int]string{41: "diff --git a/go.mod b/go.mod\n+go \x1b[31m1.2\x1b[0m\n"}
@@ -21,7 +22,7 @@ func TestViewCommand(t *testing.T) {
 		got := runCommand(t, "view", "41")
 
 		assertOutput(t, got,
-			"Title: Bump example\n\nFull body line one.\n\nFull body line two.\n\nChecks: ✓ passing\n\n"+
+			"Title: Bump example\n\nFull body line one.\n\nFull body line two.\n\nChecks: ✓ passing\nMergeable: ✗ conflict\nLabels: dependencies, waiting for maintainer, status/hold\n\n"+
 				"diff --git a/go.mod b/go.mod\n+go 1.2\n",
 			"",
 		)

@@ -23,7 +23,11 @@ open pull requests authored by Dependabot, showing:
   - Status check result
   - Mergeable status
 
-Use the arrow keys to navigate and q to quit.`,
+Use the arrow keys to navigate and q to quit.
+
+For agent-driven reviews, use view to inspect the diff, checks, mergeability,
+and labels. Assess compatibility, decide which actions the evidence supports,
+and carry them out for explicit PR numbers within the user's instructions.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := newClient()
 		if err != nil {

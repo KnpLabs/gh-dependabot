@@ -11,7 +11,7 @@ import (
 
 var viewCmd = &cobra.Command{
 	Use:          "view <number>",
-	Short:        "Show a Dependabot pull request and its unified diff",
+	Short:        "Show a Dependabot pull request, its unified diff, checks, and labels",
 	Example:      `  gh dependabot view 42`,
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
@@ -33,8 +33,17 @@ var viewCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Title: %s\n\n%s\n\nChecks: %s\n\n%s",
-			plainPRTitle(details.PullRequest.Title), plainReviewText(details.Body), checkLabel(details.PullRequest.Checks).text, plainReviewText(diff))
+		labels := make([]string, 0, len(details.Labels))
+		for _, label := range details.Labels {
+			labels = append(labels, plainPRTitle(label))
+		}
+		labelText := "none"
+		if len(labels) > 0 {
+			labelText = strings.Join(labels, ", ")
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Title: %s\n\n%s\n\nChecks: %s\nMergeable: %s\nLabels: %s\n\n%s",
+			plainPRTitle(details.PullRequest.Title), plainReviewText(details.Body),
+			checkLabel(details.PullRequest.Checks).text, mergeabilityLabel(details.PullRequest.Mergeable).text, labelText, plainReviewText(diff))
 		return err
 	},
 }

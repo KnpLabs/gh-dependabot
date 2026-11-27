@@ -1,9 +1,10 @@
 query DependabotPRByNumber($owner: String!, $name: String!, $number: Int!) {
 	repository(owner: $owner, name: $name) {
 		pullRequest(number: $number) {
-			body
+			bodyText
 			state
 			...DependabotPRFields
+			labels(first: 100) { pageInfo { hasNextPage endCursor } nodes { name } }
 		}
 	}
 }

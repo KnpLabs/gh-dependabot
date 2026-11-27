@@ -79,7 +79,7 @@ skill and exposes `list` and `view` in `gh dependabot --help`. Install the skill
 at user scope to use it across repositories.
 
 ```bash
-gh skill install KnpLabs/gh-dependabot gh-dependanbot
+gh skill install KnpLabs/gh-dependabot gh-dependabot
 ```
 
 When a new gh-dependabot release is available, update the extension and the
@@ -87,7 +87,7 @@ installed skill.
 
 ```bash
 gh extension upgrade gh-dependabot
-gh skill update gh-dependanbot
+gh skill update gh-dependabot
 ```
 
 Start an agent session in the repository you want to review and use a request
@@ -97,11 +97,11 @@ like this.
 /gh-dependabot
 ```
 
-The agent lists the PRs, inspects each relevant PR, and reports a recommendation
-with evidence.
-
-To authorize a specific action, name the PR and the action you want, for
-example, “Do not approve or merge PR #123 even if the update is compatible.”
+The agent reviews each PR and decides whether to approve and merge it. It uses
+`gh dependabot view` for the diff, checks, mergeability, and all labels. The
+agent interprets labels in the repository's context and checks the upgrade
+against repository usage and upstream documentation. It carries out its
+decision without per-PR confirmation, within your instructions.
 
 ## Contributing with Ship / Show / Ask
 

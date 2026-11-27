@@ -13,8 +13,8 @@ acts within the scope authorized by the user.
 - `gh dependabot list` prints one row per open Dependabot PR in the current
   repository, with the PR number, title, check status, and mergeability.
 - `gh dependabot view <number>` prints the title, full PR body, check status,
-  and unified diff for a single Dependabot PR. Both read commands write plain
-  text to standard output and exit.
+  mergeability, and unified diff for a single Dependabot PR. Both read commands
+  write plain text to standard output and exit.
 - The README documents the workflow and existing commands. The agent passes the
   PR number to `approve`, `merge`, or `rebase` when it decides PR by PR. To skip
   a PR, it records its reason and moves on.
