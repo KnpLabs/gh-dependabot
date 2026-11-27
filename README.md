@@ -72,6 +72,37 @@ Both views show line numbers and highlight additions and deletions.
 
 Wants more feature? Open an issue, I'll take a look as soon as I can!
 
+## Review with a coding agent
+
+Use GitHub CLI 2.106.0 or later and a gh-dependabot release that includes the
+skill and exposes `list` and `view` in `gh dependabot --help`. Install the skill
+at user scope to use it across repositories.
+
+```bash
+gh skill install KnpLabs/gh-dependabot gh-dependanbot
+```
+
+When a new gh-dependabot release is available, update the extension and the
+installed skill.
+
+```bash
+gh extension upgrade gh-dependabot
+gh skill update gh-dependanbot
+```
+
+Start an agent session in the repository you want to review and use a request
+like this.
+
+```sh
+/gh-dependabot
+```
+
+The agent lists the PRs, inspects each relevant PR, and reports a recommendation
+with evidence.
+
+To authorize a specific action, name the PR and the action you want, for
+example, “Do not approve or merge PR #123 even if the update is compatible.”
+
 ## Contributing with Ship / Show / Ask
 
 Choose how to land each change on `develop`:
