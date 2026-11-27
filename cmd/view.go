@@ -1,0 +1,54 @@
+package cmd
+
+import (
+	"fmt"
+	"strings"
+	"unicode"
+
+	"github.com/charmbracelet/x/ansi"
+	"github.com/spf13/cobra"
+)
+
+var viewCmd = &cobra.Command{
+	Use:          "view <number>",
+	Short:        "Show a Dependabot pull request and its unified diff",
+	Example:      `  gh dependabot view 42`,
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		numbers, err := parsePRNumbers(args)
+		if err != nil {
+			return err
+		}
+		number := numbers[0]
+		client, err := newClient()
+		if err != nil {
+			return err
+		}
+		details, err := client.OpenDependabotPR(number)
+		if err != nil {
+			return err
+		}
+		diff, err := client.Diff(number)
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "Title: %s\n\n%s\n\nChecks: %s\n\n%s",
+			plainPRTitle(details.PullRequest.Title), plainReviewText(details.Body), checkLabel(details.PullRequest.Checks).text, plainReviewText(diff))
+		return err
+	},
+}
+
+func plainReviewText(text string) string {
+	text = strings.ReplaceAll(ansi.Strip(text), "\r\n", "\n")
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return '�'
+		}
+		return r
+	}, text)
+}
+
+func init() {
+	rootCmd.AddCommand(viewCmd)
+}

@@ -1,0 +1,56 @@
+query DependabotPRByNumber($owner: String!, $name: String!, $number: Int!) {
+	repository(owner: $owner, name: $name) {
+		pullRequest(number: $number) {
+			body
+			state
+			...DependabotPRFields
+		}
+	}
+}
+fragment DependabotPRFields on PullRequest {
+	number
+	title
+	headRefName
+	author { login }
+	mergeable
+	commits(last: 1) {
+		nodes {
+			commit {
+				id
+				statusCheckRollup {
+					contexts(first: 100) { ...CheckContextFields }
+				}
+			}
+		}
+	}
+}
+fragment CheckContextFields on StatusCheckRollupContextConnection {
+	pageInfo { hasNextPage endCursor }
+	nodes {
+		... on CheckRun { conclusion }
+		... on StatusContext { state }
+	}
+}
+
+variables: {"name":"fake-repo","number":42,"owner":"knplabs"}
+
+---
+
+query DependabotCheckContexts($commit: ID!, $after: String!) {
+	node(id: $commit) {
+		... on Commit {
+			statusCheckRollup {
+				contexts(first: 100, after: $after) { ...CheckContextFields }
+			}
+		}
+	}
+}
+fragment CheckContextFields on StatusCheckRollupContextConnection {
+	pageInfo { hasNextPage endCursor }
+	nodes {
+		... on CheckRun { conclusion }
+		... on StatusContext { state }
+	}
+}
+
+variables: {"after":"checks-next","commit":"commit-42"}

@@ -94,8 +94,9 @@ Key conventions:
   turns stderr into the error message. `Merge` returns an error wrapping
   `github.ErrConflict` when the PR conflicts, and callers decide whether to
   `RequestRebase`.
-- PRs are fetched by a single query, `ListOpenDependabotPRs`
-  (`internal/github/pullrequests.go`), shared by every command.
+- Commands that list or act on a set of PRs share `ListOpenDependabotPRs`.
+  The `view` command looks up one open Dependabot PR by number through
+  `OpenDependabotPR` and fetches its diff through `Diff`.
 - A PR counts as Dependabot's if the author is `dependabot[bot]` /
   `app/dependabot` / `dependabot` **or** the head branch starts with
   `dependabot/`.

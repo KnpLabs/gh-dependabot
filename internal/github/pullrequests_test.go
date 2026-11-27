@@ -181,3 +181,67 @@ func TestListOpenDependabotPRsReturnsErrorFromLaterPage(t *testing.T) {
 		t.Fatalf("request count = %d, want 2", len(transport.requests))
 	}
 }
+
+func TestOpenDependabotPR(t *testing.T) {
+	tests := []struct {
+		name    string
+		fixture string
+		wantErr string
+	}{
+		{name: "returns one open Dependabot pull request with its full body", fixture: "pull_request_by_number.json"},
+		{name: "returns not found for a missing pull request", fixture: "pull_request_by_number_null.json", wantErr: "pull request #42 not found"},
+		{name: "rejects a closed pull request", fixture: "pull_request_by_number_closed.json", wantErr: "pull request #42 is not open"},
+		{name: "rejects a pull request outside Dependabot scope", fixture: "pull_request_by_number_out_of_scope.json", wantErr: "pull request #42 is not a Dependabot pull request"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &fakeTransport{fixture: tt.fixture}
+			got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+			assertErr(t, err, tt.wantErr)
+			assertRequestsMatchGolden(t, transport, "dependabot_pr_by_number")
+			if tt.wantErr != "" {
+				return
+			}
+			want := PullRequestDetails{
+				PullRequest: dependabot.PullRequest{
+					Number: 42, Title: "Bump example from 1.0 to 1.1", Author: "dependabot[bot]",
+					HeadRefName: "dependabot/npm_and_yarn/example-1.1", Checks: dependabot.CheckPending,
+					Mergeable: dependabot.Mergeable,
+				},
+				Body: "Bumps [example](https://example.test) from 1.0 to 1.1.\n\nRelease notes: full body.",
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("OpenDependabotPR(42) =\n%+v\nwant\n%+v", got, want)
+			}
+		})
+	}
+}
+
+func TestOpenDependabotPRPaginatesChecks(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{name: "includes a failing check on the next page", status: http.StatusOK},
+		{name: "returns an error for an incomplete rollup", status: http.StatusBadGateway},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := &fakeTransport{
+				fixtures: []string{"pull_request_checks_first_page.json", "pull_request_checks_next_page.json"},
+				statuses: []int{http.StatusOK, tt.status},
+			}
+			got, err := newTestClient(t, nil, transport).OpenDependabotPR(42)
+			if tt.status != http.StatusOK {
+				if err == nil || !strings.Contains(err.Error(), "failed to query checks for PR #42") || got != (PullRequestDetails{}) {
+					t.Fatalf("OpenDependabotPR(42) = %+v, %v; want no details and a check error", got, err)
+				}
+				return
+			}
+			if err != nil || got.PullRequest.Checks != dependabot.CheckFailing {
+				t.Fatalf("OpenDependabotPR(42) = %+v, %v; want failing checks", got, err)
+			}
+			assertRequestsMatchGolden(t, transport, "dependabot_checks_pagination")
+		})
+	}
+}

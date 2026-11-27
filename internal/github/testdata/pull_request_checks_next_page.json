@@ -1,0 +1,18 @@
+{
+  "data": {
+    "node": {
+      "statusCheckRollup": {
+        "contexts": {
+          "nodes": [
+            {
+              "state": "FAILURE"
+            }
+          ],
+          "pageInfo": {
+            "hasNextPage": false
+          }
+        }
+      }
+    }
+  }
+}
