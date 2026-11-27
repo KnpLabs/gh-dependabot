@@ -6,9 +6,10 @@ import (
 	"github.com/knplabs/gh-dependabot/internal/dependabot"
 )
 
-const dependabotPRsQuery = `query DependabotPRs($owner: String!, $name: String!) {
+const dependabotPRsQuery = `query DependabotPRs($owner: String!, $name: String!, $after: String) {
 		repository(owner: $owner, name: $name) {
-			pullRequests(states: OPEN, first: 100) {
+			pullRequests(states: OPEN, first: 100, after: $after) {
+				pageInfo { hasNextPage endCursor }
 				nodes {
 					number
 					title
@@ -59,26 +60,45 @@ type pullRequestNode struct {
 }
 
 func (c *client) ListOpenDependabotPRs() ([]dependabot.PullRequest, error) {
-	var result struct {
-		Repository struct {
-			PullRequests struct {
-				Nodes []pullRequestNode `json:"nodes"`
-			} `json:"pullRequests"`
-		} `json:"repository"`
-	}
-
-	if err := c.graphql.Do(dependabotPRsQuery, c.repoVariables(), &result); err != nil {
-		return nil, fmt.Errorf("failed to query pull requests: %w", err)
-	}
-
 	var prs []dependabot.PullRequest
-	for _, node := range result.Repository.PullRequests.Nodes {
-		pr := node.toPullRequest()
-		if pr.IsDependabot() {
-			prs = append(prs, pr)
+	variables := c.repoVariables()
+	seenCursors := map[string]bool{}
+	for {
+		var result struct {
+			Repository struct {
+				PullRequests struct {
+					PageInfo struct {
+						HasNextPage bool   `json:"hasNextPage"`
+						EndCursor   string `json:"endCursor"`
+					} `json:"pageInfo"`
+					Nodes []pullRequestNode `json:"nodes"`
+				} `json:"pullRequests"`
+			} `json:"repository"`
 		}
+
+		if err := c.graphql.Do(dependabotPRsQuery, variables, &result); err != nil {
+			return nil, fmt.Errorf("failed to query pull requests: %w", err)
+		}
+
+		for _, node := range result.Repository.PullRequests.Nodes {
+			pr := node.toPullRequest()
+			if pr.IsDependabot() {
+				prs = append(prs, pr)
+			}
+		}
+		if !result.Repository.PullRequests.PageInfo.HasNextPage {
+			return prs, nil
+		}
+		if result.Repository.PullRequests.PageInfo.EndCursor == "" {
+			return nil, fmt.Errorf("failed to query pull requests: next page has no end cursor")
+		}
+		cursor := result.Repository.PullRequests.PageInfo.EndCursor
+		if seenCursors[cursor] {
+			return nil, fmt.Errorf("failed to query pull requests: repeated end cursor %q", cursor)
+		}
+		seenCursors[cursor] = true
+		variables["after"] = cursor
 	}
-	return prs, nil
 }
 
 func (node pullRequestNode) toPullRequest() dependabot.PullRequest {
